@@ -157,7 +157,7 @@ impl<const N: usize> Buffer<N> {
         // SAFETY: Length was checked previously.
         unsafe { encode_to_slice_inner(input, buf, table).unwrap_unchecked() };
         // SAFETY: `encode_to_slice` writes only ASCII bytes.
-        unsafe { core::str::from_utf8_unchecked_mut(buf) }
+        unsafe { str::from_utf8_unchecked_mut(buf) }
     }
 
     /// Returns a reference to the underlying bytes casted to a string slice.
