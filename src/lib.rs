@@ -9,8 +9,9 @@
 //! avoids the performance penalty of going through [`core::fmt::Formatter`] or any
 //! heap allocation.
 //!
-//! _Version requirement: rustc 1.51+_
+//! _Version requirement: rustc 1.64+_
 
+#![doc(html_root_url = "https://docs.rs/const-hex/1.0.0")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::must_use_candidate)]
 

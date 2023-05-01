@@ -1,10 +1,10 @@
 [package]
 name = "const-hex"
-version = "1.0.0"
+version = "1.0.0" # remember to update html_root_url
 authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
 description = "Fast byte array to hex string conversion"
-edition = "2018"
-rust-version = "1.51"
+edition = "2021"
+rust-version = "1.64"
 license = "MIT OR Apache-2.0"
 categories = ["value-formatting", "no-std"]
 keywords = ["hex", "bytes", "fmt"]
@@ -17,7 +17,6 @@ hex = { version = ">=0.4.2", optional = true }
 
 [features]
 default = ["std"]
-hex = ["dep:hex"]
 std = ["hex?/std"]
 alloc = ["hex?/alloc"]
 serde = ["hex?/serde"]

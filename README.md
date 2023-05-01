@@ -10,7 +10,7 @@ The implementation comes mostly from, and extends, the [`hex`] crate, but
 avoids the performance penalty of going through [`core::fmt::Formatter`] or any
 heap allocation.
 
-_Version requirement: rustc 1.51+_
+_Version requirement: rustc 1.64+_
 
 [`core::fmt::Formatter`]: https://doc.rust-lang.org/std/fmt/struct.Formatter.html
 
