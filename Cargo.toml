@@ -16,7 +16,7 @@ repository = "https://github.com/danipopes/const-hex"
 hex = { version = ">=0.4.2", optional = true }
 
 [features]
-default = ["std"]
+default = ["std", "hex"]
 std = ["hex?/std"]
 alloc = ["hex?/alloc"]
 serde = ["hex?/serde"]
