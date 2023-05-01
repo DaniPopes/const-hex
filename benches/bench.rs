@@ -18,7 +18,7 @@ struct StdFormat<const N: usize>([u8; N]);
 impl<const N: usize> fmt::Display for StdFormat<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for byte in &self.0 {
-            write!(f, "{:02x}", byte)?;
+            write!(f, "{byte:02x}")?;
         }
         Ok(())
     }
