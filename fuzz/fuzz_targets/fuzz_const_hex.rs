@@ -17,7 +17,7 @@ macro_rules! test {
                 let string = buffer.format(&val);
                 assert_eq!(string.len(), val.len() * 2);
                 let expected = val.iter().map(|b| format!("{b:02x}")).collect::<String>();
-                assert_eq!(string, expected);
+                assert_eq!(string, &expected);
             }
         }
     };
