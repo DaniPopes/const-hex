@@ -1,0 +1,22 @@
+[package]
+name = "const-hex-fuzz"
+version = "0.0.0"
+authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
+edition = "2018"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+const-hex = { path = ".." }
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "fuzz_const_hex"
+path = "fuzz_targets/fuzz_const_hex.rs"
+test = false
+doc = false
+
+[workspace]

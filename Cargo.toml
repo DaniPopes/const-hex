@@ -1,0 +1,29 @@
+[package]
+name = "const-hex"
+version = "1.0.0"
+authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
+description = "Fast byte array to hex string conversion"
+edition = "2018"
+rust-version = "1.51"
+license = "MIT OR Apache-2.0"
+categories = ["value-formatting", "no-std"]
+keywords = ["hex", "bytes", "fmt"]
+documentation = "https://docs.rs/const-hex"
+homepage = "https://github.com/danipopes/const-hex"
+repository = "https://github.com/danipopes/const-hex"
+
+[dependencies]
+hex = { version = ">=0.4.2", optional = true }
+
+[features]
+default = ["std"]
+hex = ["dep:hex"]
+std = ["hex?/std"]
+alloc = ["hex?/alloc"]
+serde = ["hex?/serde"]
+
+[lib]
+doc-scrape-examples = false
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
