@@ -4,12 +4,16 @@
 //! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
 //! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
 //!
-//! This crate provides a fast conversion of byte arrays to hexadecimal strings.
-//! The implementation comes mostly from, and extends, the [`hex`] crate, but
-//! avoids the performance penalty of going through [`core::fmt::Formatter`] or any
-//! heap allocation.
+//! This crate provides a fast conversion of byte arrays to hexadecimal strings,
+//! both at compile time, and at run time.
+//!
+//! Extends the [`hex`] crate's implementation with [const-eval], a
+//! [const-generics formatting buffer][Buffer], similar to [`itoa`]'s, and more.
 //!
 //! _Version requirement: rustc 1.64+_
+//!
+//! [const-eval]: const_encode
+//! [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
 
 #![doc(html_root_url = "https://docs.rs/const-hex/1.0.0")]
 #![cfg_attr(not(feature = "std"), no_std)]
