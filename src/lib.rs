@@ -19,12 +19,23 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::must_use_candidate)]
 
+#[cfg(feature = "alloc")]
+#[macro_use]
+extern crate alloc;
+
 use core::slice;
 use core::str;
 
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+
 #[cfg(feature = "hex")]
 #[doc(inline)]
-pub use hex::{decode, decode_to_slice, encode, encode_upper, FromHex, FromHexError, ToHex};
+pub use hex::{decode_to_slice, FromHex, FromHexError, ToHex};
+
+#[cfg(all(feature = "hex", feature = "alloc"))]
+#[doc(inline)]
+pub use hex::decode;
 
 #[cfg(not(feature = "hex"))]
 #[doc(hidden)]
@@ -42,7 +53,7 @@ pub const HEX_CHARS_UPPER: &[u8; 16] = b"0123456789ABCDEF";
 /// A correctly sized stack allocation for the formatted bytes to be written
 /// into.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// let mut buffer = const_hex::Buffer::new();
@@ -212,21 +223,24 @@ impl<const N: usize> Buffer<N> {
     }
 }
 
-#[cold]
-#[inline(never)]
-#[track_caller]
-fn length_mismatch() -> ! {
-    panic!("length mismatch");
-}
-
+/// Encodes `input` as a hex string into a [`Buffer`].
+///
+/// # Examples
+///
+/// ```
+/// # fn main() -> Result<(), const_hex::FromHexError> {
+/// const BUFFER: const_hex::Buffer<4> = const_hex::const_encode(b"kiwi");
+/// assert_eq!(BUFFER.as_str(), "6b697769");
+/// # Ok(())
+/// # }
+/// ```
 #[inline]
-const fn byte2hex(byte: u8, table: &[u8; 16]) -> (u8, u8) {
-    let high = table[((byte & 0xf0) >> 4) as usize];
-    let low = table[(byte & 0x0f) as usize];
-    (high, low)
+pub const fn const_encode<const N: usize>(input: &[u8; N]) -> Buffer<N> {
+    Buffer::new().const_format(input)
 }
 
-/// Encodes some bytes into a mutable slice of bytes.
+/// Encodes `input` as a hex string using lowercase characters into a mutable
+/// slice of bytes `output`.
 ///
 /// # Errors
 ///
@@ -246,7 +260,8 @@ pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
     encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_LOWER)
 }
 
-/// Encodes some bytes into a mutable slice of bytes.
+/// Encodes `input` as a hex string using uppercase characters into a mutable
+/// slice of bytes `output`.
 ///
 /// # Errors
 ///
@@ -269,39 +284,88 @@ pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
     encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_UPPER)
 }
 
+/// Encodes `data` as a hex string using lowercase characters.
+///
+/// Lowercase characters are used (e.g. `f9b4ca`). The resulting string's
+/// length is always even, each byte in `data` is always encoded using two hex
+/// digits. Thus, the resulting string contains exactly twice as many bytes as
+/// the input data.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(const_hex::encode("Hello world!"), "48656c6c6f20776f726c6421");
+/// assert_eq!(const_hex::encode([1, 2, 3, 15, 16]), "0102030f10");
+/// ```
+#[cfg(feature = "alloc")]
+pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
+    encode_inner(data.as_ref(), HEX_CHARS_LOWER)
+}
+
+/// Encodes `data` as a hex string using uppercase characters.
+///
+/// Apart from the characters' casing, this works exactly like `encode()`.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(const_hex::encode_upper("Hello world!"), "48656C6C6F20776F726C6421");
+/// assert_eq!(const_hex::encode_upper([1, 2, 3, 15, 16]), "0102030F10");
+/// ```
+#[cfg(feature = "alloc")]
+pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
+    encode_inner(data.as_ref(), HEX_CHARS_UPPER)
+}
+
+#[cfg(feature = "alloc")]
+fn encode_inner(data: &[u8], table: &[u8; 16]) -> String {
+    let mut output = vec![0u8; data.len() * 2];
+    // SAFETY: `output` is long enough (input.len() * 2).
+    unsafe { encode_to_slice_inner(data, &mut output, table).unwrap_unchecked() };
+    // SAFETY: `encode_to_slice` writes only ASCII bytes.
+    unsafe { String::from_utf8_unchecked(output) }
+}
+
+/// The main encoding function.
 #[inline]
 fn encode_to_slice_inner(
     input: &[u8],
     output: &mut [u8],
     table: &[u8; 16],
 ) -> Result<(), FromHexError> {
-    if output.len() != input.len() * 2 {
+    if output.len() != 2 * input.len() {
         return Err(FromHexError::InvalidStringLength);
     }
-
-    let mut c = 0;
-    for byte in input.iter() {
-        let (high, low) = byte2hex(*byte, table);
-        output[c] = high;
-        c = c.wrapping_add(1);
-        output[c] = low;
-        c = c.wrapping_add(1);
-    }
+    // SAFETY: Lengths are checked above.
+    unsafe { encode_default(input, output, table) };
     Ok(())
 }
 
-/// Encodes some bytes into a [`Buffer`].
+/// # Safety
 ///
-/// # Examples
-///
-/// ```
-/// # fn main() -> Result<(), const_hex::FromHexError> {
-/// const BUFFER: const_hex::Buffer<4> = const_hex::const_encode(b"kiwi");
-/// assert_eq!(BUFFER.as_str(), "6b697769");
-/// # Ok(())
-/// # }
-/// ```
+/// `output.len() == 2 * input.len()`
 #[inline]
-pub const fn const_encode<const N: usize>(input: &[u8; N]) -> Buffer<N> {
-    Buffer::new().const_format(input)
+unsafe fn encode_default(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
+    let mut c = 0;
+    for byte in input.iter() {
+        let (high, low) = byte2hex(*byte, table);
+        *output.get_unchecked_mut(c) = high;
+        c = c.wrapping_add(1);
+        *output.get_unchecked_mut(c) = low;
+        c = c.wrapping_add(1);
+    }
+}
+
+#[inline]
+const fn byte2hex(byte: u8, table: &[u8; 16]) -> (u8, u8) {
+    let high = table[((byte & 0xf0) >> 4) as usize];
+    let low = table[(byte & 0x0f) as usize];
+    (high, low)
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn length_mismatch() -> ! {
+    panic!("length mismatch");
 }
