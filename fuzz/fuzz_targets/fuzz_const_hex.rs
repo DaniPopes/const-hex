@@ -2,6 +2,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
+use std::io::Write;
 
 #[derive(Arbitrary, Debug)]
 enum Input {
@@ -9,23 +10,32 @@ enum Input {
     _32([u8; 32]),
 }
 
-macro_rules! test {
-    ($val:expr) => {
-        match $val {
-            val => {
-                let mut buffer = const_hex::Buffer::new();
-                let string = buffer.format(&val);
-                assert_eq!(string.len(), val.len() * 2);
-                let expected = val.iter().map(|b| format!("{b:02x}")).collect::<String>();
-                assert_eq!(string, &expected);
-            }
-        }
-    };
+fn mk_expected(bytes: &[u8]) -> String {
+    let mut s = Vec::with_capacity(bytes.len() * 2);
+    for i in bytes {
+        write!(s, "{i:02x}").unwrap();
+    }
+    unsafe { String::from_utf8_unchecked(s) }
 }
 
-fuzz_target!(|input: Input| {
-    match input {
-        Input::_20(val) => test!(val),
-        Input::_32(val) => test!(val),
+fn test_buffer<const N: usize>(bytes: &[u8]) {
+    if let Ok(bytes) = <[u8; N]>::try_from(bytes) {
+        let mut buffer = const_hex::Buffer::new();
+        let string = buffer.format(&bytes);
+        assert_eq!(string.len(), bytes.len() * 2);
+        assert_eq!(string, &mk_expected(&bytes));
     }
+}
+
+fuzz_target!(|input: &[u8]| {
+    test_buffer::<8>(input);
+    test_buffer::<20>(input);
+    test_buffer::<32>(input);
+    test_buffer::<64>(input);
+    test_buffer::<128>(input);
+
+    let mut bytes = vec![0; input.len() * 2];
+    const_hex::encode_to_slice(input, &mut bytes).unwrap();
+    let expected = mk_expected(input);
+    assert_eq!(bytes, expected.as_bytes());
 });

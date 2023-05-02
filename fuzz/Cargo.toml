@@ -2,7 +2,7 @@
 name = "const-hex-fuzz"
 version = "0.0.0"
 authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
-edition = "2018"
+edition = "2021"
 publish = false
 
 [package.metadata]
