@@ -23,6 +23,15 @@
 #[macro_use]
 extern crate alloc;
 
+cfg_if::cfg_if! {
+    if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
+        mod x86;
+        use x86::_encode;
+    } else {
+        use encode_default as _encode;
+    }
+}
+
 use core::slice;
 use core::str;
 
@@ -337,7 +346,7 @@ fn encode_to_slice_inner(
         return Err(FromHexError::InvalidStringLength);
     }
     // SAFETY: Lengths are checked above.
-    unsafe { encode_default(input, output, table) };
+    unsafe { _encode(input, output, table) };
     Ok(())
 }
 
