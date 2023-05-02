@@ -17,7 +17,7 @@
 
 #![doc(html_root_url = "https://docs.rs/const-hex/1.0.0")]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(clippy::must_use_candidate)]
+#![allow(clippy::must_use_candidate, clippy::wildcard_imports)]
 
 #[cfg(feature = "alloc")]
 #[macro_use]

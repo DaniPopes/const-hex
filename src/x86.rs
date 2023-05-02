@@ -15,6 +15,7 @@ pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) 
     // Load table into register and construct masks.
     let hex_table = _mm_loadu_si128(table.as_ptr().cast());
     let mask_lo = _mm_set1_epi8(0x0F);
+    #[allow(clippy::cast_possible_wrap)]
     let mask_hi = _mm_set1_epi8(0xF0u8 as i8);
 
     let input_chunks = input.chunks_exact(CHUNK_SIZE);
@@ -45,7 +46,7 @@ pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) 
         _mm_storeu_si128(ptr.cast(), hex_hi);
     }
 
-    if input_remainder.len() > 0 {
+    if !input_remainder.is_empty() {
         let output_remainder = &mut output[i..];
         debug_assert_eq!(output_remainder.len(), 2 * input_remainder.len());
         super::encode_default(input_remainder, output_remainder, table);
