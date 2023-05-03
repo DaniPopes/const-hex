@@ -1,14 +1,7 @@
 #![no_main]
 
-use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use std::io::Write;
-
-#[derive(Arbitrary, Debug)]
-enum Input {
-    _20([u8; 20]),
-    _32([u8; 32]),
-}
 
 fn mk_expected(bytes: &[u8]) -> String {
     let mut s = Vec::with_capacity(bytes.len() * 2);

@@ -10,7 +10,6 @@ cargo-fuzz = true
 
 [dependencies]
 const-hex = { path = ".." }
-arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]
