@@ -7,12 +7,17 @@ const CHUNK_SIZE: usize = core::mem::size_of::<__m128i>();
 
 cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 
+/// Hex encoding function using x86 intrisics.
+///
+/// # Safety
+///
+/// Assumes `output.len() == 2 * input.len()`.
 pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
         return super::encode_default(input, output, table);
     }
 
-    // Load table into register and construct masks.
+    // Load table and construct masks.
     let hex_table = _mm_loadu_si128(table.as_ptr().cast());
     let mask_lo = _mm_set1_epi8(0x0F);
     #[allow(clippy::cast_possible_wrap)]
@@ -23,7 +28,7 @@ pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) 
 
     let mut i = 0;
     for input_chunk in input_chunks {
-        // Load input bytes into register and mask to nibbles.
+        // Load input bytes and mask to nibbles.
         let input_bytes = _mm_loadu_si128(input_chunk.as_ptr().cast());
         let mut lo = _mm_and_si128(input_bytes, mask_lo);
         let mut hi = _mm_srli_epi32::<4>(_mm_and_si128(input_bytes, mask_hi));
@@ -38,17 +43,15 @@ pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) 
 
         // Store result into the output buffer.
         let ptr = output.as_mut_ptr().add(i);
-        i = i.wrapping_add(CHUNK_SIZE);
+        i = i.checked_add(CHUNK_SIZE).unwrap_unchecked();
         _mm_storeu_si128(ptr.cast(), hex_lo);
 
         let ptr = output.as_mut_ptr().add(i);
-        i = i.wrapping_add(CHUNK_SIZE);
+        i = i.checked_add(CHUNK_SIZE).unwrap_unchecked();
         _mm_storeu_si128(ptr.cast(), hex_hi);
     }
 
     if !input_remainder.is_empty() {
-        let output_remainder = &mut output[i..];
-        debug_assert_eq!(output_remainder.len(), 2 * input_remainder.len());
-        super::encode_default(input_remainder, output_remainder, table);
+        super::encode_default(input_remainder, &mut output[i..], table);
     }
 }

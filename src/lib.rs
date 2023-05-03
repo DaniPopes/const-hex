@@ -22,6 +22,7 @@
 #[macro_use]
 extern crate alloc;
 
+// The main encoding function. Assumes `output.len() == 2 * input.len()`.
 cfg_if::cfg_if! {
     if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
         mod x86;
@@ -97,22 +98,26 @@ impl<const N: usize> Buffer<N> {
     }
 
     /// Clears the buffer.
+    #[inline]
     pub fn clear(&mut self) {
         self.bytes = [0; N];
     }
 
     /// Consumes and clears the buffer.
+    #[inline]
     pub const fn cleared(mut self) -> Self {
         self.bytes = [0; N];
         self
     }
 
     /// Print an array of bytes into this buffer.
+    #[inline]
     pub const fn const_format(self, array: &[u8; N]) -> Self {
         self.const_format_inner(array, HEX_CHARS_LOWER)
     }
 
     /// Print an array of bytes into this buffer.
+    #[inline]
     pub const fn const_format_upper(self, array: &[u8; N]) -> Self {
         self.const_format_inner(array, HEX_CHARS_UPPER)
     }
@@ -123,13 +128,14 @@ impl<const N: usize> Buffer<N> {
         while i < N {
             let (high, low) = byte2hex(array[i], table);
             self.bytes[i] = u16::from_le_bytes([high, low]);
-            i = i.wrapping_add(1);
+            i += 1;
         }
         self
     }
 
     /// Print an array of bytes into this buffer and return a reference to its
     /// *lower* hex string representation within the buffer.
+    #[inline]
     pub fn format(&mut self, array: &[u8; N]) -> &mut str {
         // length of array is guaranteed to be N.
         self.format_inner(array, HEX_CHARS_LOWER)
@@ -137,6 +143,7 @@ impl<const N: usize> Buffer<N> {
 
     /// Print an array of bytes into this buffer and return a reference to its
     /// *upper* hex string representation within the buffer.
+    #[inline]
     pub fn format_upper(&mut self, array: &[u8; N]) -> &mut str {
         // length of array is guaranteed to be N.
         self.format_inner(array, HEX_CHARS_UPPER)
@@ -168,18 +175,17 @@ impl<const N: usize> Buffer<N> {
     #[track_caller]
     #[inline]
     fn format_slice_inner(&mut self, slice: &[u8], table: &[u8; 16]) -> &mut str {
-        if slice.len() != N {
-            length_mismatch();
-        }
+        assert_eq!(slice.len(), N, "length mismatch");
         self.format_inner(slice, table)
     }
 
     // Doesn't check length
+    #[inline]
     fn format_inner(&mut self, input: &[u8], table: &[u8; 16]) -> &mut str {
         let buf = self.as_mut_bytes();
         // SAFETY: Length was checked previously.
-        unsafe { encode_to_slice_inner(input, buf, table).unwrap_unchecked() };
-        // SAFETY: `encode_to_slice` writes only ASCII bytes.
+        unsafe { _encode(input, buf, table) };
+        // SAFETY: We only write only ASCII bytes.
         unsafe { str::from_utf8_unchecked_mut(buf) }
     }
 
@@ -326,15 +332,15 @@ pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
 }
 
 #[cfg(feature = "alloc")]
+#[inline]
 fn encode_inner(data: &[u8], table: &[u8; 16]) -> String {
     let mut output = vec![0u8; data.len() * 2];
     // SAFETY: `output` is long enough (input.len() * 2).
-    unsafe { encode_to_slice_inner(data, &mut output, table).unwrap_unchecked() };
-    // SAFETY: `encode_to_slice` writes only ASCII bytes.
+    unsafe { _encode(data, &mut output, table) };
+    // SAFETY: We only write only ASCII bytes.
     unsafe { String::from_utf8_unchecked(output) }
 }
 
-/// The main encoding function.
 #[inline]
 fn encode_to_slice_inner(
     input: &[u8],
@@ -349,18 +355,20 @@ fn encode_to_slice_inner(
     Ok(())
 }
 
+/// Default encoding function.
+///
 /// # Safety
 ///
-/// `output.len() == 2 * input.len()`
-#[inline]
+/// Assumes `output.len() == 2 * input.len()`.
 unsafe fn encode_default(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
+    debug_assert_eq!(output.len(), 2 * input.len());
     let mut c = 0;
-    for byte in input.iter() {
+    for byte in input {
         let (high, low) = byte2hex(*byte, table);
         *output.get_unchecked_mut(c) = high;
-        c = c.wrapping_add(1);
+        c = c.checked_add(1).unwrap_unchecked();
         *output.get_unchecked_mut(c) = low;
-        c = c.wrapping_add(1);
+        c = c.checked_add(1).unwrap_unchecked();
     }
 }
 
@@ -369,11 +377,4 @@ const fn byte2hex(byte: u8, table: &[u8; 16]) -> (u8, u8) {
     let high = table[((byte & 0xf0) >> 4) as usize];
     let low = table[(byte & 0x0f) as usize];
     (high, low)
-}
-
-#[cold]
-#[inline(never)]
-#[track_caller]
-fn length_mismatch() -> ! {
-    panic!("length mismatch");
 }
