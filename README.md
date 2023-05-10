@@ -17,6 +17,28 @@ _Version requirement: rustc 1.64+_
 [buffer]: https://docs.rs/const-hex/latest/const-hex/struct.Buffer.html
 [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
 
+## Performance
+
+This crate is ~10 times faster than [`hex`] in encoding, and 30+ times faster
+than `libstd` in formatting.
+
+You can run the following benchmarks with `cargo bench` on a nightly compiler.
+
+```log
+test encode_const_hex::bench1_32   ... bench:           1 ns/iter (+/- 0)
+test encode_const_hex::bench2_128  ... bench:           5 ns/iter (+/- 0)
+test encode_const_hex::bench3_4096 ... bench:         204 ns/iter (+/- 9)
+test encode_hex::bench1_32         ... bench:          15 ns/iter (+/- 1)
+test encode_hex::bench2_128        ... bench:          60 ns/iter (+/- 2)
+test encode_hex::bench3_4096       ... bench:       1,703 ns/iter (+/- 50)
+test format_const_hex::bench1_32   ... bench:          15 ns/iter (+/- 0)
+test format_const_hex::bench2_128  ... bench:          20 ns/iter (+/- 0)
+test format_const_hex::bench3_4096 ... bench:         380 ns/iter (+/- 9)
+test format_std::bench1_32         ... bench:         470 ns/iter (+/- 4)
+test format_std::bench2_128        ... bench:       1,961 ns/iter (+/- 17)
+test format_std::bench3_4096       ... bench:      61,688 ns/iter (+/- 1,994)
+```
+
 ## Acknowledgements
 
 -   [`hex`] for most of the formatting implementation
