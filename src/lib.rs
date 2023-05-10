@@ -14,7 +14,7 @@
 //!
 //! [const-eval]: const_encode
 //! [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
-
+#![cfg_attr(not(feature = "hex"), doc = "[`hex`]: https://docs.rs/hex")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::must_use_candidate, clippy::wildcard_imports)]
 
@@ -22,8 +22,15 @@
 #[macro_use]
 extern crate alloc;
 
+use cfg_if::cfg_if;
+use core::slice;
+use core::str;
+
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec::Vec};
+
 // The main encoding function. Assumes `output.len() == 2 * input.len()`.
-cfg_if::cfg_if! {
+cfg_if! {
     if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
         mod x86;
         use x86::_encode;
@@ -32,32 +39,46 @@ cfg_if::cfg_if! {
     }
 }
 
-use core::slice;
-use core::str;
+// FIXME: x86 decode implementation.
+use decode_default as _decode;
 
-#[cfg(feature = "alloc")]
-use alloc::string::String;
+cfg_if! {
+    if #[cfg(feature = "hex")] {
+        #[doc(inline)]
+        pub use hex::{FromHex, FromHexError, ToHex};
 
-#[cfg(feature = "hex")]
-#[doc(inline)]
-pub use hex::{decode_to_slice, FromHex, FromHexError, ToHex};
+        #[cfg(feature = "serde")]
+        #[doc(inline)]
+        pub use hex::serde;
+    } else {
+        mod error;
+        pub use error::FromHexError;
 
-#[cfg(all(feature = "hex", feature = "alloc"))]
-#[doc(inline)]
-pub use hex::decode;
+        mod traits;
+        pub use traits::{FromHex, ToHex};
 
-#[cfg(not(feature = "hex"))]
-#[doc(hidden)]
-mod error;
-#[cfg(not(feature = "hex"))]
-#[doc(inline)]
-pub use error::FromHexError;
+        #[cfg(feature = "serde")]
+        pub mod serde;
+    }
+}
+
+#[cfg(feature = "serde")]
+#[doc(no_inline)]
+pub use self::serde::deserialize;
+#[cfg(all(feature = "serde", feature = "alloc"))]
+#[doc(no_inline)]
+pub use self::serde::{serialize, serialize_upper};
 
 /// The table of lowercase characters used for hex encoding.
 pub const HEX_CHARS_LOWER: &[u8; 16] = b"0123456789abcdef";
 
 /// The table of uppercase characters used for hex encoding.
 pub const HEX_CHARS_UPPER: &[u8; 16] = b"0123456789ABCDEF";
+
+/// The lookup table of hex byte to value, used for hex decoding.
+///
+/// [`u8::MAX`] is used for invalid values.
+pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
 
 /// A correctly sized stack allocation for the formatted bytes to be written
 /// into.
@@ -331,10 +352,79 @@ pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
     encode_inner(data.as_ref(), HEX_CHARS_UPPER)
 }
 
+/// Decodes a hex string into raw bytes.
+///
+/// Both, upper and lower case characters are valid in the input string and can
+/// even be mixed (e.g. `f9b4ca`, `F9B4CA` and `f9B4Ca` are all valid strings).
+///
+/// # Errors
+///
+/// This function returns an error if the input is not an even number of
+/// characters long or contains invalid hex characters.
+///
+/// # Example
+///
+/// ```
+/// assert_eq!(
+///     const_hex::decode("48656c6c6f20776f726c6421"),
+///     Ok("Hello world!".to_owned().into_bytes())
+/// );
+///
+/// assert_eq!(const_hex::decode("123"), Err(const_hex::FromHexError::OddLength));
+/// assert!(const_hex::decode("foo").is_err());
+/// ```
+#[cfg(feature = "alloc")]
+pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
+    fn decode_inner(input: &[u8]) -> Result<Vec<u8>, FromHexError> {
+        if input.len() % 2 != 0 {
+            return Err(FromHexError::OddLength);
+        }
+        let mut output = vec![0u8; input.len() / 2];
+        // SAFETY: Lengths are checked above.
+        unsafe { _decode(input, &mut output)? };
+        Ok(output)
+    }
+
+    decode_inner(input.as_ref())
+}
+
+/// Decode a hex string into a mutable bytes slice.
+///
+/// Both, upper and lower case characters are valid in the input string and can
+/// even be mixed (e.g. `f9b4ca`, `F9B4CA` and `f9B4Ca` are all valid strings).
+///
+/// # Errors
+///
+/// This function returns an error if the input is not an even number of
+/// characters long or contains invalid hex characters, or if the output slice
+/// is not exactly half the length of the input.
+///
+/// # Example
+///
+/// ```
+/// let mut bytes = [0u8; 4];
+/// assert_eq!(const_hex::decode_to_slice("6b697769", &mut bytes as &mut [u8]), Ok(()));
+/// assert_eq!(&bytes, b"kiwi");
+/// ```
+pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
+    fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+        if input.len() % 2 != 0 {
+            return Err(FromHexError::OddLength);
+        }
+        if output.len() != input.len() / 2 {
+            return Err(FromHexError::InvalidStringLength);
+        }
+        // SAFETY: Lengths are checked above.
+        unsafe { _decode(input, output) }
+    }
+
+    decode_to_slice_inner(input.as_ref(), output)
+}
+
 #[cfg(feature = "alloc")]
 #[inline]
 fn encode_inner(data: &[u8], table: &[u8; 16]) -> String {
-    let mut output = vec![0u8; data.len() * 2];
+    let mut output = vec![0; data.len() * 2];
     // SAFETY: `output` is long enough (input.len() * 2).
     unsafe { _encode(data, &mut output, table) };
     // SAFETY: We only write only ASCII bytes.
@@ -362,14 +452,42 @@ fn encode_to_slice_inner(
 /// Assumes `output.len() == 2 * input.len()`.
 unsafe fn encode_default(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
     debug_assert_eq!(output.len(), 2 * input.len());
-    let mut c = 0;
+    let mut i = 0;
     for byte in input {
         let (high, low) = byte2hex(*byte, table);
-        *output.get_unchecked_mut(c) = high;
-        c = c.checked_add(1).unwrap_unchecked();
-        *output.get_unchecked_mut(c) = low;
-        c = c.checked_add(1).unwrap_unchecked();
+        *output.get_unchecked_mut(i) = high;
+        i = i.checked_add(1).unwrap_unchecked();
+        *output.get_unchecked_mut(i) = low;
+        i = i.checked_add(1).unwrap_unchecked();
     }
+}
+
+/// Default decoding function.
+///
+/// # Safety
+///
+/// Assumes `output.len() == input.len() / 2`.
+unsafe fn decode_default(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+    macro_rules! next {
+        ($var:ident, $i:expr) => {
+            let hex = *input.get_unchecked($i);
+            let $var = HEX_DECODE_LUT[hex as usize];
+            if $var == u8::MAX {
+                return Err(FromHexError::InvalidHexCharacter {
+                    c: hex as char,
+                    index: $i,
+                });
+            }
+        };
+    }
+
+    debug_assert_eq!(output.len(), input.len() / 2);
+    for (i, byte) in output.iter_mut().enumerate() {
+        next!(high, i * 2);
+        next!(low, i * 2 + 1);
+        *byte = high << 4 | low;
+    }
+    Ok(())
 }
 
 #[inline]
@@ -377,4 +495,23 @@ const fn byte2hex(byte: u8, table: &[u8; 16]) -> (u8, u8) {
     let high = table[((byte & 0xf0) >> 4) as usize];
     let low = table[(byte & 0x0f) as usize];
     (high, low)
+}
+
+const fn make_decode_lut() -> [u8; 256] {
+    let mut lut = [0; 256];
+    let mut i = 0u8;
+    loop {
+        lut[i as usize] = match i {
+            b'0'..=b'9' => i - b'0',
+            b'A'..=b'F' => i - b'A' + 10,
+            b'a'..=b'f' => i - b'a' + 10,
+            // use max value for invalid characters
+            _ => u8::MAX,
+        };
+        if i == u8::MAX {
+            break;
+        }
+        i += 1;
+    }
+    lut
 }

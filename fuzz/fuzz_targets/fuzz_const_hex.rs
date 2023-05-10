@@ -27,8 +27,7 @@ fuzz_target!(|input: &[u8]| {
     test_buffer::<64>(input);
     test_buffer::<128>(input);
 
-    let mut bytes = vec![0; input.len() * 2];
-    const_hex::encode_to_slice(input, &mut bytes).unwrap();
+    let bytes = const_hex::encode(input);
     let expected = mk_expected(input);
-    assert_eq!(bytes, expected.as_bytes());
+    assert_eq!(bytes, expected);
 });

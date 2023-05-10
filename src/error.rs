@@ -1,4 +1,4 @@
-//! Copied from `hex::error`.
+//! Modified from `hex::error`.
 
 use core::fmt;
 
