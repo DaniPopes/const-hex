@@ -24,11 +24,18 @@ cpufeatures = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 
 [features]
-default = ["std", "hex"]
+default = ["std"]
 std = ["hex?/std", "serde?/std", "alloc"]
 alloc = ["hex?/alloc", "serde?/alloc"]
+
+# Serde support. Use with `#[serde(with = "const_hex")]`
 serde = ["hex?/serde", "dep:serde"]
 
+# Use `hex`'s traits instead of our own.
+# This should not be needed most of the time.
+hex = ["dep:hex"]
+
+# Nightly features for better performance.
 nightly = []
 
 [lib]
