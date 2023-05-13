@@ -34,7 +34,7 @@ jobs:
       - run: cargo test --release
       - run: cargo build --no-default-features
       - run: cargo test --tests --no-default-features
-      - run: cargo test --tests --no-default-features --release
+      - run: cargo test --tests --no-default-features --release --all-features
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
         if: matrix.rust == 'nightly'

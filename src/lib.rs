@@ -16,6 +16,7 @@
 //! [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
 #![cfg_attr(not(feature = "hex"), doc = "[`hex`]: https://docs.rs/hex")]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(feature = "nightly", feature(core_intrinsics))]
 #![allow(clippy::must_use_candidate, clippy::wildcard_imports)]
 
 #[cfg(feature = "alloc")]
@@ -29,7 +30,7 @@ use core::str;
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 
-// The main encoding function. Assumes `output.len() == 2 * input.len()`.
+// The main encoding and decoding functions.
 cfg_if! {
     if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
         mod x86;
@@ -42,6 +43,8 @@ cfg_if! {
 // FIXME: x86 decode implementation.
 use decode_default as _decode;
 
+// If the `hex` feature is enabled, re-export the `hex` crate's traits.
+// Otherwise, use our own with the more optimized implementation.
 cfg_if! {
     if #[cfg(feature = "hex")] {
         #[doc(inline)]
@@ -59,6 +62,38 @@ cfg_if! {
 
         #[cfg(feature = "serde")]
         pub mod serde;
+    }
+}
+
+// Support for nightly features.
+cfg_if! {
+    if #[cfg(feature = "nightly")] {
+        // Branch prediction hint. This is currently only available on nightly.
+        #[allow(unused_imports)]
+        use core::intrinsics::{likely, unlikely};
+    } else {
+        // On stable we can use #[cold] to get a equivalent effect: this attribute
+        // suggests that the function is unlikely to be called
+        #[inline(always)]
+        #[cold]
+        fn cold() {}
+
+        #[inline(always)]
+        #[allow(dead_code)]
+        fn likely(b: bool) -> bool {
+            if !b {
+                cold();
+            }
+            b
+        }
+
+        #[inline(always)]
+        fn unlikely(b: bool) -> bool {
+            if b {
+                cold();
+            }
+            b
+        }
     }
 }
 
@@ -406,7 +441,7 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 #[cfg(feature = "alloc")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
     fn internal(input: &[u8]) -> Result<Vec<u8>, FromHexError> {
-        if input.len() % 2 != 0 {
+        if unlikely(input.len() % 2 != 0) {
             return Err(FromHexError::OddLength);
         }
         let mut output = vec![0; input.len() / 2];
@@ -438,10 +473,10 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
 /// ```
 pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
     fn internal(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
-        if input.len() % 2 != 0 {
+        if unlikely(input.len() % 2 != 0) {
             return Err(FromHexError::OddLength);
         }
-        if output.len() != input.len() / 2 {
+        if unlikely(output.len() != input.len() / 2) {
             return Err(FromHexError::InvalidStringLength);
         }
         // SAFETY: Lengths are checked above.
@@ -472,7 +507,7 @@ fn encode_to_slice_internal(
     output: &mut [u8],
     table: &[u8; 16],
 ) -> Result<(), FromHexError> {
-    if output.len() != 2 * input.len() {
+    if unlikely(output.len() != 2 * input.len()) {
         return Err(FromHexError::InvalidStringLength);
     }
     // SAFETY: Lengths are checked above.

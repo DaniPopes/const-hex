@@ -1,3 +1,5 @@
+use crate::encode_default;
+
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
@@ -14,7 +16,7 @@ cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 /// Assumes `output.len() == 2 * input.len()`.
 pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
-        return super::encode_default(input, output, table);
+        return encode_default(input, output, table);
     }
 
     // Load table and construct masks.
@@ -52,6 +54,6 @@ pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) 
     }
 
     if !input_remainder.is_empty() {
-        super::encode_default(input_remainder, &mut output[i..], table);
+        encode_default(input_remainder, &mut output[i..], table);
     }
 }

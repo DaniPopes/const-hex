@@ -29,6 +29,8 @@ std = ["hex?/std", "serde?/std", "alloc"]
 alloc = ["hex?/alloc", "serde?/alloc"]
 serde = ["hex?/serde", "dep:serde"]
 
+nightly = []
+
 [lib]
 doc-scrape-examples = false
 
