@@ -56,6 +56,22 @@ fn encode_upper() {
 
 #[test]
 #[cfg(feature = "alloc")]
+fn encode_lower_prefixed() {
+    let encoded = const_hex::encode_prefixed(ALL);
+    assert_eq!(&encoded[0..2], "0x");
+    assert_lower(&encoded[2..]);
+}
+
+#[test]
+#[cfg(feature = "alloc")]
+fn encode_upper_prefixed() {
+    let encoded = const_hex::encode_upper_prefixed(ALL);
+    assert_eq!(&encoded[0..2], "0x");
+    assert_upper(&encoded[2..]);
+}
+
+#[test]
+#[cfg(feature = "alloc")]
 fn decode_lower() {
     let decoded = const_hex::decode(ALL_LOWER).unwrap();
     assert_eq!(decoded, ALL);
