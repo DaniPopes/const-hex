@@ -426,6 +426,8 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// Both, upper and lower case characters are valid in the input string and can
 /// even be mixed (e.g. `f9b4ca`, `F9B4CA` and `f9B4Ca` are all valid strings).
 ///
+/// Strips the `0x` prefix if present.
+///
 /// # Errors
 ///
 /// This function returns an error if the input is not an even number of
@@ -438,6 +440,10 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 ///     const_hex::decode("48656c6c6f20776f726c6421"),
 ///     Ok("Hello world!".to_owned().into_bytes())
 /// );
+/// assert_eq!(
+///     const_hex::decode("0x48656c6c6f20776f726c6421"),
+///     Ok("Hello world!".to_owned().into_bytes())
+/// );
 ///
 /// assert_eq!(const_hex::decode("123"), Err(const_hex::FromHexError::OddLength));
 /// assert!(const_hex::decode("foo").is_err());
@@ -448,6 +454,7 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
         if unlikely(input.len() % 2 != 0) {
             return Err(FromHexError::OddLength);
         }
+        let input = strip_prefix(input);
         let mut output = vec![0; input.len() / 2];
         // SAFETY: Lengths are checked above.
         unsafe { _decode(input, &mut output)? };
@@ -462,6 +469,8 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
 /// Both, upper and lower case characters are valid in the input string and can
 /// even be mixed (e.g. `f9b4ca`, `F9B4CA` and `f9B4Ca` are all valid strings).
 ///
+/// Strips the `0x` prefix if present.
+///
 /// # Errors
 ///
 /// This function returns an error if the input is not an even number of
@@ -472,7 +481,10 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
 ///
 /// ```
 /// let mut bytes = [0u8; 4];
-/// assert_eq!(const_hex::decode_to_slice("6b697769", &mut bytes as &mut [u8]), Ok(()));
+/// const_hex::decode_to_slice("6b697769", &mut bytes).unwrap();
+/// assert_eq!(&bytes, b"kiwi");
+///
+/// const_hex::decode_to_slice("0x6b697769", &mut bytes).unwrap();
 /// assert_eq!(&bytes, b"kiwi");
 /// ```
 pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
@@ -480,6 +492,7 @@ pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
         if unlikely(input.len() % 2 != 0) {
             return Err(FromHexError::OddLength);
         }
+        let input = strip_prefix(input);
         if unlikely(output.len() != input.len() / 2) {
             return Err(FromHexError::InvalidStringLength);
         }
@@ -569,6 +582,15 @@ const fn byte2hex(byte: u8, table: &[u8; 16]) -> (u8, u8) {
     let high = table[((byte & 0xf0) >> 4) as usize];
     let low = table[(byte & 0x0f) as usize];
     (high, low)
+}
+
+#[inline]
+fn strip_prefix(bytes: &[u8]) -> &[u8] {
+    if bytes.starts_with(b"0x") {
+        &bytes[2..]
+    } else {
+        bytes
+    }
 }
 
 const fn make_decode_lut() -> [u8; 256] {
