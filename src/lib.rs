@@ -17,7 +17,11 @@
 #![cfg_attr(not(feature = "hex"), doc = "[`hex`]: https://docs.rs/hex")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics))]
-#![allow(clippy::must_use_candidate, clippy::wildcard_imports)]
+#![allow(
+    clippy::must_use_candidate,
+    clippy::wildcard_imports,
+    clippy::cast_lossless
+)]
 
 #[cfg(feature = "alloc")]
 #[macro_use]
