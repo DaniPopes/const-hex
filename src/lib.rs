@@ -16,7 +16,7 @@
 //! [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
 #![cfg_attr(not(feature = "hex"), doc = "[`hex`]: https://docs.rs/hex")]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(feature = "nightly", feature(core_intrinsics))]
+#![cfg_attr(feature = "nightly", feature(core_intrinsics, inline_const))]
 #![allow(
     clippy::cast_lossless,
     clippy::inline_always,
@@ -73,9 +73,16 @@ cfg_if! {
 // Support for nightly features.
 cfg_if! {
     if #[cfg(feature = "nightly")] {
-        // Branch prediction hint. This is currently only available on nightly.
+        // Branch prediction hints.
         #[allow(unused_imports)]
         use core::intrinsics::{likely, unlikely};
+
+        // `inline_const`: [#76001](https://github.com/rust-lang/rust/issues/76001)
+        macro_rules! maybe_const_assert {
+            ($($tt:tt)*) => {
+                const { assert!($($tt)*) }
+            };
+        }
     } else {
         // On stable we can use #[cold] to get a equivalent effect: this attribute
         // suggests that the function is unlikely to be called
@@ -98,6 +105,12 @@ cfg_if! {
                 cold();
             }
             b
+        }
+
+        macro_rules! maybe_const_assert {
+            ($($tt:tt)*) => {
+                assert!($($tt)*)
+            };
         }
     }
 }
@@ -123,6 +136,11 @@ pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
 /// A correctly sized stack allocation for the formatted bytes to be written
 /// into.
 ///
+/// `N` is the amount of bytes of the input.
+///
+/// Note that this buffer will contain only null ('\0') bytes before any
+/// formatting is done.
+///
 /// # Examples
 ///
 /// ```
@@ -132,7 +150,8 @@ pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
 /// ```
 #[must_use]
 pub struct Buffer<const N: usize> {
-    /// Workaround for not being able to do operations with constants: `[u8; N * 2]`
+    // Workaround for Rust issue #76560:
+    // https://github.com/rust-lang/rust/issues/76560
     bytes: [u16; N],
 }
 
@@ -151,6 +170,9 @@ impl<const N: usize> Clone for Buffer<N> {
 }
 
 impl<const N: usize> Buffer<N> {
+    /// The length of the buffer in bytes.
+    pub const LEN: usize = N * 2;
+
     /// This is a cheap operation; you don't need to worry about reusing buffers
     /// for efficiency.
     #[inline]
@@ -234,7 +256,6 @@ impl<const N: usize> Buffer<N> {
 
     // Checks length
     #[track_caller]
-    #[inline]
     fn format_slice_internal(&mut self, slice: &[u8], table: &[u8; 16]) -> &mut str {
         assert_eq!(slice.len(), N, "length mismatch");
         self.format_internal(slice, table)
@@ -243,58 +264,97 @@ impl<const N: usize> Buffer<N> {
     // Doesn't check length
     #[inline]
     fn format_internal(&mut self, input: &[u8], table: &[u8; 16]) -> &mut str {
-        let buf = self.as_mut_bytes();
-        // SAFETY: Length was checked previously.
-        unsafe { _encode(input, buf, table) };
-        // SAFETY: We only write only ASCII bytes.
-        unsafe { str::from_utf8_unchecked_mut(buf) }
+        // SAFETY: Length was checked previously;
+        // we only write only ASCII bytes.
+        unsafe {
+            let buf = self.as_mut_bytes();
+            _encode(input, buf, table);
+            str::from_utf8_unchecked_mut(buf)
+        }
+    }
+
+    /// Copies `self` into a new owned `String`.
+    #[cfg(feature = "alloc")]
+    #[inline]
+    pub fn to_string(&self) -> String {
+        // SAFETY: The buffer always contains valid UTF-8.
+        unsafe { String::from_utf8_unchecked(self.as_bytes().to_vec()) }
     }
 
     /// Returns a reference to the underlying bytes casted to a string slice.
-    ///
-    /// Note that this contains only null ('\0') bytes before any formatting
-    /// is done.
     #[inline]
     pub const fn as_str(&self) -> &str {
         // SAFETY: The buffer always contains valid UTF-8.
-        let bytes = self.as_bytes();
-        unsafe { str::from_utf8_unchecked(bytes) }
+        unsafe { str::from_utf8_unchecked(self.as_bytes()) }
     }
 
-    /// Returns a reference to the underlying bytes casted to a string slice.
-    ///
-    /// Note that this contains only null ('\0') bytes before any formatting
-    /// is done.
+    /// Returns a mutable reference to the underlying bytes casted to a string
+    /// slice.
     #[inline]
     pub fn as_mut_str(&mut self) -> &mut str {
         // SAFETY: The buffer always contains valid UTF-8.
-        let bytes = self.as_mut_bytes();
-        unsafe { str::from_utf8_unchecked_mut(bytes) }
+        unsafe { str::from_utf8_unchecked_mut(self.as_mut_bytes()) }
     }
 
-    /// Returns a reference to the underlying byte slice.
+    /// Copies `self` into a new `Vec`.
+    #[cfg(feature = "alloc")]
+    #[inline]
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    /// Returns a reference the underlying stack-allocated byte array.
     ///
-    /// Note that this contains only null ('\0') bytes before any formatting
-    /// is done.
+    /// # Panics
+    ///
+    /// If `LEN` does not equal `N * 2`.
+    ///
+    /// This is panic is evaluated at compile-time if the `nightly` feature
+    /// is enabled, as inline `const` blocks are currently unstable.
+    ///
+    /// See Rust tracking issue [#76001](https://github.com/rust-lang/rust/issues/76001).
+    #[inline]
+    pub fn as_byte_array<const LEN: usize>(&self) -> &[u8; LEN] {
+        maybe_const_assert!(LEN == Self::LEN, "`LEN` must be equal to `N * 2`");
+        // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
+        unsafe { &*self.bytes.as_ptr().cast::<[u8; LEN]>() }
+    }
+
+    /// Returns a mutable reference the underlying stack-allocated byte array.
+    ///
+    /// # Panics
+    ///
+    /// If `LEN` does not equal `N * 2`.
+    ///
+    /// See [`as_byte_array`](Buffer::as_byte_array) for more information.
+    #[inline]
+    pub fn as_mut_byte_array<const LEN: usize>(&mut self) -> &mut [u8; LEN] {
+        maybe_const_assert!(LEN == Self::LEN, "`LEN` must be equal to `N * 2`");
+        // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
+        unsafe { &mut *self.bytes.as_mut_ptr().cast::<[u8; LEN]>() }
+    }
+
+    /// Returns a reference to the underlying bytes.
     #[inline]
     pub const fn as_bytes(&self) -> &[u8] {
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
         let ptr = self.bytes.as_ptr().cast::<u8>();
-        unsafe { slice::from_raw_parts(ptr, N * 2) }
+        unsafe { slice::from_raw_parts(ptr, Self::LEN) }
     }
 
-    /// Returns a mutable reference to the underlying byte slice.
+    /// Returns a mutable reference to the underlying bytes.
     ///
-    /// Note that this contains only null ('\0') bytes before any formatting
-    /// is done.
+    /// # Safety
     ///
-    /// Not public API because other methods rely on the internal buffer always
-    /// being valid UTF-8.
+    /// The caller must ensure that the content of the slice is valid UTF-8
+    /// before the borrow ends and the underlying `str` is used.
+    ///
+    /// Use of a `str` whose contents are not valid UTF-8 is undefined behavior.
     #[inline]
-    fn as_mut_bytes(&mut self) -> &mut [u8] {
+    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8] {
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
         let ptr = self.bytes.as_mut_ptr().cast::<u8>();
-        unsafe { slice::from_raw_parts_mut(ptr, N * 2) }
+        unsafe { slice::from_raw_parts_mut(ptr, Self::LEN) }
     }
 }
 
@@ -560,7 +620,7 @@ unsafe fn decode_default(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
         ($var:ident, $i:expr) => {
             let hex = *input.get_unchecked($i);
             let $var = HEX_DECODE_LUT[hex as usize];
-            if $var == u8::MAX {
+            if unlikely($var == u8::MAX) {
                 return Err(FromHexError::InvalidHexCharacter {
                     c: hex as char,
                     index: $i,
