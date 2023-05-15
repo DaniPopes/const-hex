@@ -41,7 +41,7 @@ test format_std::bench3_4096       ... bench:      61,688 ns/iter (+/- 1,994)
 
 ## Acknowledgements
 
--   [`hex`] for most of the formatting implementation
+-   [`hex`] for the initial encoding/decoding implementations
 -   [dtolnay]/[itoa] for the initial crate/library API layout
 
 [`hex`]: https://crates.io/crates/hex
