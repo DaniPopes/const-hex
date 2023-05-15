@@ -276,6 +276,7 @@ impl<const N: usize> Buffer<N> {
     /// Copies `self` into a new owned `String`.
     #[cfg(feature = "alloc")]
     #[inline]
+    #[allow(clippy::inherent_to_string)] // this is intentional
     pub fn to_string(&self) -> String {
         // SAFETY: The buffer always contains valid UTF-8.
         unsafe { String::from_utf8_unchecked(self.as_bytes().to_vec()) }
