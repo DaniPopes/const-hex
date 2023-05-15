@@ -21,7 +21,9 @@
     clippy::cast_lossless,
     clippy::inline_always,
     clippy::must_use_candidate,
-    clippy::wildcard_imports
+    clippy::wildcard_imports,
+    unsafe_op_in_unsafe_fn,
+    unused_unsafe
 )]
 
 #[cfg(feature = "alloc")]
