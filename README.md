@@ -13,8 +13,8 @@ Extends the [`hex`] crate's implementation with [const-eval], a
 
 _Version requirement: rustc 1.64+_
 
-[const-eval]: https://docs.rs/const-hex/latest/const-hex/fn.const_encode.html
-[buffer]: https://docs.rs/const-hex/latest/const-hex/struct.Buffer.html
+[const-eval]: https://docs.rs/const-hex/latest/const_hex/fn.const_encode.html
+[buffer]: https://docs.rs/const-hex/latest/const_hex/struct.Buffer.html
 [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
 
 ## Performance
