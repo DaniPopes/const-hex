@@ -29,8 +29,8 @@ impl fmt::Display for FromHexError {
             FromHexError::InvalidHexCharacter { c, index } => {
                 write!(f, "Invalid character {c:?} at position {index}")
             }
-            FromHexError::OddLength => write!(f, "Odd number of digits"),
-            FromHexError::InvalidStringLength => write!(f, "Invalid string length"),
+            FromHexError::OddLength => f.write_str("Odd number of digits"),
+            FromHexError::InvalidStringLength => f.write_str("Invalid string length"),
         }
     }
 }

@@ -29,6 +29,7 @@ use alloc::{
 /// ```
 #[cfg_attr(feature = "alloc", doc = "\n[`encode`]: crate::encode")]
 #[cfg_attr(not(feature = "alloc"), doc = "\n[`encode`]: crate::encode_to_slice")]
+#[deprecated(note = "use `encode` or other specialized functions instead")]
 pub trait ToHex {
     /// Encode the hex strict representing `self` into the result. Lower case
     /// letters are used (e.g. `f9b4ca`)
@@ -75,6 +76,7 @@ fn encode_to_iter<T: iter::FromIterator<char>>(source: &[u8], table: &'static [u
     BytesToHexChars::new(source, table).collect()
 }
 
+#[allow(deprecated)]
 impl<T: AsRef<[u8]>> ToHex for T {
     fn encode_hex<U: iter::FromIterator<char>>(&self) -> U {
         encode_to_iter(self.as_ref(), crate::HEX_CHARS_LOWER)

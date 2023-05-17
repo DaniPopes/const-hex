@@ -53,21 +53,16 @@ use decode_default as _decode;
 // Otherwise, use our own with the more optimized implementation.
 cfg_if! {
     if #[cfg(feature = "hex")] {
+        pub extern crate hex;
+
         #[doc(inline)]
         pub use hex::{FromHex, FromHexError, ToHex};
-
-        #[cfg(feature = "serde")]
-        #[doc(inline)]
-        pub use hex::serde;
     } else {
         mod error;
         pub use error::FromHexError;
 
         mod traits;
         pub use traits::{FromHex, ToHex};
-
-        #[cfg(feature = "serde")]
-        pub mod serde;
     }
 }
 
@@ -116,12 +111,18 @@ cfg_if! {
     }
 }
 
-#[cfg(feature = "serde")]
-#[doc(no_inline)]
-pub use self::serde::deserialize;
-#[cfg(all(feature = "serde", feature = "alloc"))]
-#[doc(no_inline)]
-pub use self::serde::{serialize, serialize_upper};
+// Serde support.
+cfg_if! {
+    if #[cfg(feature = "serde")] {
+        pub mod serde;
+
+        #[doc(no_inline)]
+        pub use self::serde::deserialize;
+        #[cfg(feature = "alloc")]
+        #[doc(no_inline)]
+        pub use self::serde::{serialize, serialize_upper};
+    }
+}
 
 /// The table of lowercase characters used for hex encoding.
 pub const HEX_CHARS_LOWER: &[u8; 16] = b"0123456789abcdef";

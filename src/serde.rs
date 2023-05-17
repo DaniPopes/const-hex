@@ -21,23 +21,8 @@ use serde::de::{Error, Visitor};
 use serde::Deserializer;
 
 #[cfg(feature = "alloc")]
-#[doc(hidden)]
 mod serialize {
-    use crate::ToHex;
-    use alloc::string::String;
     use serde::Serializer;
-
-    /// Serializes `data` as hex string using uppercase characters.
-    ///
-    /// Apart from the characters' casing, this works exactly like `serialize()`.
-    pub fn serialize_upper<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        T: ToHex,
-    {
-        let s = data.encode_hex_upper::<String>();
-        serializer.serialize_str(&s)
-    }
 
     /// Serializes `data` as hex string using lowercase characters.
     ///
@@ -48,15 +33,24 @@ mod serialize {
     pub fn serialize<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
-        T: ToHex,
+        T: AsRef<[u8]>,
     {
-        let s = data.encode_hex::<String>();
-        serializer.serialize_str(&s)
+        serializer.serialize_str(&crate::encode_prefixed(data.as_ref()))
+    }
+
+    /// Serializes `data` as hex string using uppercase characters.
+    ///
+    /// Apart from the characters' casing, this works exactly like [`serialize`].
+    pub fn serialize_upper<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: AsRef<[u8]>,
+    {
+        serializer.serialize_str(&crate::encode_upper_prefixed(data.as_ref()))
     }
 }
 
 #[cfg(feature = "alloc")]
-#[doc(inline)]
 pub use serialize::{serialize, serialize_upper};
 
 /// Deserializes a hex string into raw bytes.
@@ -86,14 +80,14 @@ where
         where
             E: Error,
         {
-            FromHex::from_hex(data).map_err(Error::custom)
+            FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
         }
 
         fn visit_borrowed_str<E>(self, data: &'de str) -> Result<Self::Value, E>
         where
             E: Error,
         {
-            FromHex::from_hex(data).map_err(Error::custom)
+            FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
         }
     }
 
