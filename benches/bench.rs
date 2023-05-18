@@ -9,7 +9,7 @@ extern crate test;
 struct HexBufferFormat<const N: usize>([u8; N]);
 impl<const N: usize> fmt::Display for HexBufferFormat<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut buffer = const_hex::Buffer::new();
+        let mut buffer = const_hex::Buffer::<N>::new();
         f.write_str(buffer.format(&self.0))
     }
 }

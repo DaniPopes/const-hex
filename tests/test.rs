@@ -1,15 +1,23 @@
 use const_hex::Buffer;
 
 #[test]
+fn prefix() {
+    let mut buffer = Buffer::<256, true>::new();
+    let s = buffer.format(&ALL);
+    assert_eq!(&s[..2], "0x");
+    assert_lower(&s[2..]);
+}
+
+#[test]
 fn array_lower() {
-    let mut buffer = Buffer::new();
+    let mut buffer = Buffer::<256>::new();
     let s = buffer.format(&ALL);
     assert_lower(s);
 }
 
 #[test]
 fn array_upper() {
-    let mut buffer = Buffer::new();
+    let mut buffer = Buffer::<256>::new();
     let s = buffer.format_upper(&ALL);
     assert_upper(s);
 }

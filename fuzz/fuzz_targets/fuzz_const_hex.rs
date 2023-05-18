@@ -13,12 +13,18 @@ fn mk_expected(bytes: &[u8]) -> String {
 
 fn test_buffer<const N: usize, const LEN: usize>(bytes: &[u8]) {
     if let Ok(bytes) = <[u8; N]>::try_from(bytes) {
-        let mut buffer = const_hex::Buffer::new();
+        let mut buffer = const_hex::Buffer::<N, false>::new();
         let string = buffer.format(&bytes).to_string();
         assert_eq!(string.len(), bytes.len() * 2);
         assert_eq!(string.as_bytes(), buffer.as_byte_array::<LEN>());
         assert_eq!(string, buffer.as_str());
         assert_eq!(string, mk_expected(&bytes));
+
+        let mut buffer = const_hex::Buffer::<N, true>::new();
+        let prefixed = buffer.format(&bytes).to_string();
+        assert_eq!(prefixed.len(), 2 + bytes.len() * 2);
+        assert_eq!(prefixed, buffer.as_str());
+        assert_eq!(prefixed, format!("0x{string}"));
     }
 }
 

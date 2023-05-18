@@ -62,6 +62,7 @@ cfg_if! {
         pub use error::FromHexError;
 
         mod traits;
+        #[allow(deprecated)]
         pub use traits::{FromHex, ToHex};
     }
 }
@@ -138,61 +139,54 @@ pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
 /// A correctly sized stack allocation for the formatted bytes to be written
 /// into.
 ///
-/// `N` is the amount of bytes of the input.
+/// `N` is the amount of bytes of the input, while `PREFIX` specifies whether
+/// the "0x" prefix is prepended to the output.
 ///
-/// Note that this buffer will contain only null ('\0') bytes before any
-/// formatting is done.
+/// Note that this buffer will contain only the prefix, if specified, and null
+/// ('\0') bytes before any formatting is done.
 ///
 /// # Examples
 ///
 /// ```
-/// let mut buffer = const_hex::Buffer::new();
+/// let mut buffer = const_hex::Buffer::<4>::new();
 /// let printed = buffer.format(b"1234");
 /// assert_eq!(printed, "31323334");
 /// ```
 #[must_use]
-pub struct Buffer<const N: usize> {
+#[repr(C)]
+pub struct Buffer<const N: usize, const PREFIX: bool = false> {
+    prefix: [u8; 2],
     // Workaround for Rust issue #76560:
     // https://github.com/rust-lang/rust/issues/76560
     bytes: [u16; N],
 }
 
-impl<const N: usize> Default for Buffer<N> {
+impl<const N: usize, const PREFIX: bool> Default for Buffer<N, PREFIX> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const N: usize> Clone for Buffer<N> {
+impl<const N: usize, const PREFIX: bool> Clone for Buffer<N, PREFIX> {
     #[inline]
     fn clone(&self) -> Self {
         Self::new()
     }
 }
 
-impl<const N: usize> Buffer<N> {
+impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// The length of the buffer in bytes.
-    pub const LEN: usize = N * 2;
+    pub const LEN: usize = (N + PREFIX as usize) * 2;
 
     /// This is a cheap operation; you don't need to worry about reusing buffers
     /// for efficiency.
     #[inline]
     pub const fn new() -> Self {
-        Self { bytes: [0; N] }
-    }
-
-    /// Clears the buffer.
-    #[inline]
-    pub fn clear(&mut self) {
-        self.bytes = [0; N];
-    }
-
-    /// Consumes and clears the buffer.
-    #[inline]
-    pub const fn cleared(mut self) -> Self {
-        self.bytes = [0; N];
-        self
+        Self {
+            prefix: if PREFIX { [b'0', b'x'] } else { [0, 0] },
+            bytes: [0; N],
+        }
     }
 
     /// Print an array of bytes into this buffer.
@@ -270,7 +264,8 @@ impl<const N: usize> Buffer<N> {
         // we only write only ASCII bytes.
         unsafe {
             let buf = self.as_mut_bytes();
-            _encode(input, buf, table);
+            let output = if PREFIX { &mut buf[2..] } else { &mut buf[..] };
+            _encode(input, output, table);
             str::from_utf8_unchecked_mut(buf)
         }
     }
@@ -310,7 +305,7 @@ impl<const N: usize> Buffer<N> {
     ///
     /// # Panics
     ///
-    /// If `LEN` does not equal `N * 2`.
+    /// If `LEN` does not equal `Self::LEN`.
     ///
     /// This is panic is evaluated at compile-time if the `nightly` feature
     /// is enabled, as inline `const` blocks are currently unstable.
@@ -318,31 +313,30 @@ impl<const N: usize> Buffer<N> {
     /// See Rust tracking issue [#76001](https://github.com/rust-lang/rust/issues/76001).
     #[inline]
     pub fn as_byte_array<const LEN: usize>(&self) -> &[u8; LEN] {
-        maybe_const_assert!(LEN == Self::LEN, "`LEN` must be equal to `N * 2`");
+        maybe_const_assert!(LEN == Self::LEN, "`LEN` must be equal to `Self::LEN`");
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
-        unsafe { &*self.bytes.as_ptr().cast::<[u8; LEN]>() }
+        unsafe { &*self.as_ptr().cast::<[u8; LEN]>() }
     }
 
     /// Returns a mutable reference the underlying stack-allocated byte array.
     ///
     /// # Panics
     ///
-    /// If `LEN` does not equal `N * 2`.
+    /// If `LEN` does not equal `Self::LEN`.
     ///
     /// See [`as_byte_array`](Buffer::as_byte_array) for more information.
     #[inline]
     pub fn as_mut_byte_array<const LEN: usize>(&mut self) -> &mut [u8; LEN] {
-        maybe_const_assert!(LEN == Self::LEN, "`LEN` must be equal to `N * 2`");
+        maybe_const_assert!(LEN == Self::LEN, "`LEN` must be equal to `Self::LEN`");
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
-        unsafe { &mut *self.bytes.as_mut_ptr().cast::<[u8; LEN]>() }
+        unsafe { &mut *self.as_mut_ptr().cast::<[u8; LEN]>() }
     }
 
     /// Returns a reference to the underlying bytes.
     #[inline]
     pub const fn as_bytes(&self) -> &[u8] {
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
-        let ptr = self.bytes.as_ptr().cast::<u8>();
-        unsafe { slice::from_raw_parts(ptr, Self::LEN) }
+        unsafe { slice::from_raw_parts(self.as_ptr(), Self::LEN) }
     }
 
     /// Returns a mutable reference to the underlying bytes.
@@ -356,8 +350,42 @@ impl<const N: usize> Buffer<N> {
     #[inline]
     pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8] {
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
-        let ptr = self.bytes.as_mut_ptr().cast::<u8>();
-        unsafe { slice::from_raw_parts_mut(ptr, Self::LEN) }
+        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), Self::LEN) }
+    }
+
+    /// Returns a mutable reference to the underlying buffer, excluding the prefix.
+    ///
+    /// # Safety
+    ///
+    /// See [`as_mut_bytes`](Buffer::as_mut_bytes).
+    pub unsafe fn buffer(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.bytes.as_mut_ptr().cast(), N * 2) }
+    }
+
+    /// Returns a raw pointer to the buffer.
+    ///
+    /// The caller must ensure that the buffer outlives the pointer this
+    /// function returns, or else it will end up pointing to garbage.
+    #[inline]
+    pub const fn as_ptr(&self) -> *const u8 {
+        if PREFIX {
+            self.prefix.as_ptr()
+        } else {
+            self.bytes.as_ptr().cast::<u8>()
+        }
+    }
+
+    /// Returns an unsafe mutable pointer to the slice's buffer.
+    ///
+    /// The caller must ensure that the slice outlives the pointer this
+    /// function returns, or else it will end up pointing to garbage.
+    #[inline]
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        if PREFIX {
+            self.prefix.as_mut_ptr()
+        } else {
+            self.bytes.as_mut_ptr().cast::<u8>()
+        }
     }
 }
 
@@ -373,7 +401,9 @@ impl<const N: usize> Buffer<N> {
 /// # }
 /// ```
 #[inline]
-pub const fn const_encode<const N: usize>(input: &[u8; N]) -> Buffer<N> {
+pub const fn const_encode<const N: usize, const PREFIX: bool>(
+    input: &[u8; N],
+) -> Buffer<N, PREFIX> {
     Buffer::new().const_format(input)
 }
 
