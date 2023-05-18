@@ -155,9 +155,10 @@ pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
 #[must_use]
 #[repr(C)]
 pub struct Buffer<const N: usize, const PREFIX: bool = false> {
-    prefix: [u8; 2],
     // Workaround for Rust issue #76560:
     // https://github.com/rust-lang/rust/issues/76560
+    // This would ideally be `[u8; (N + PREFIX as usize) * 2]`
+    prefix: [u8; 2],
     bytes: [u16; N],
 }
 

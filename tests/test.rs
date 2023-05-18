@@ -1,6 +1,7 @@
 use const_hex::Buffer;
 
 #[test]
+#[cfg_attr(miri, ignore)] // false positive
 fn prefix() {
     let mut buffer = Buffer::<256, true>::new();
     let s = buffer.format(&ALL);
