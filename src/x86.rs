@@ -54,6 +54,6 @@ pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) 
     }
 
     if !input_remainder.is_empty() {
-        encode_default(input_remainder, &mut output[i..], table);
+        encode_default(input_remainder, output.get_unchecked_mut(i..), table);
     }
 }
