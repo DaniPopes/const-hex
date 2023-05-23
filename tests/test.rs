@@ -93,6 +93,22 @@ fn decode_upper() {
     assert_eq!(decoded, ALL);
 }
 
+#[test]
+#[cfg(all(feature = "serde", feature = "alloc", not(feature = "hex")))]
+fn serde() {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct All {
+        #[serde(with = "const_hex")]
+        x: Vec<u8>,
+    }
+
+    let all = All { x: ALL.to_vec() };
+    let encoded = serde_json::to_string(&all).unwrap();
+    assert_eq!(encoded, format!(r#"{{"x":"0x{ALL_LOWER}"}}"#));
+    let decoded: All = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded.x, ALL);
+}
+
 const ALL: [u8; 256] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,

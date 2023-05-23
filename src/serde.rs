@@ -76,17 +76,15 @@ where
             f.write_str("a hex encoded string")
         }
 
-        fn visit_str<E>(self, data: &str) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
+        fn visit_str<E: Error>(self, data: &str) -> Result<Self::Value, E> {
             FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
         }
 
-        fn visit_borrowed_str<E>(self, data: &'de str) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
+        fn visit_borrowed_str<E: Error>(self, data: &'de str) -> Result<Self::Value, E> {
+            FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
+        }
+
+        fn visit_string<E: Error>(self, data: String) -> Result<Self::Value, E> {
             FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
         }
     }
