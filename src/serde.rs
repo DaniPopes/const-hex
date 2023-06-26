@@ -76,15 +76,19 @@ where
             f.write_str("a hex encoded string")
         }
 
+        fn visit_bytes<E: Error>(self, data: &[u8]) -> Result<Self::Value, E> {
+            FromHex::from_hex(data).map_err(Error::custom)
+        }
+
+        fn visit_borrowed_bytes<E: Error>(self, data: &'de [u8]) -> Result<Self::Value, E> {
+            FromHex::from_hex(data).map_err(Error::custom)
+        }
+
         fn visit_str<E: Error>(self, data: &str) -> Result<Self::Value, E> {
             FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
         }
 
         fn visit_borrowed_str<E: Error>(self, data: &'de str) -> Result<Self::Value, E> {
-            FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
-        }
-
-        fn visit_string<E: Error>(self, data: String) -> Result<Self::Value, E> {
             FromHex::from_hex(data.as_bytes()).map_err(Error::custom)
         }
     }
