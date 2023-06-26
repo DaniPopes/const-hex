@@ -193,17 +193,17 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// Print an array of bytes into this buffer.
     #[inline]
     pub const fn const_format(self, array: &[u8; N]) -> Self {
-        self.const_format_internal(array, HEX_CHARS_LOWER)
+        self.const_format_inner(array, HEX_CHARS_LOWER)
     }
 
     /// Print an array of bytes into this buffer.
     #[inline]
     pub const fn const_format_upper(self, array: &[u8; N]) -> Self {
-        self.const_format_internal(array, HEX_CHARS_UPPER)
+        self.const_format_inner(array, HEX_CHARS_UPPER)
     }
 
-    /// Same as [`encode_to_slice_internal`], but const-stable.
-    const fn const_format_internal(mut self, array: &[u8; N], table: &[u8; 16]) -> Self {
+    /// Same as [`encode_to_slice_inner`], but const-stable.
+    const fn const_format_inner(mut self, array: &[u8; N], table: &[u8; 16]) -> Self {
         let mut i = 0;
         while i < N {
             let (high, low) = byte2hex(array[i], table);
@@ -218,7 +218,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     #[inline]
     pub fn format(&mut self, array: &[u8; N]) -> &mut str {
         // length of array is guaranteed to be N.
-        self.format_internal(array, HEX_CHARS_LOWER)
+        self.format_inner(array, HEX_CHARS_LOWER)
     }
 
     /// Print an array of bytes into this buffer and return a reference to its
@@ -226,7 +226,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     #[inline]
     pub fn format_upper(&mut self, array: &[u8; N]) -> &mut str {
         // length of array is guaranteed to be N.
-        self.format_internal(array, HEX_CHARS_UPPER)
+        self.format_inner(array, HEX_CHARS_UPPER)
     }
 
     /// Print a slice of bytes into this buffer and return a reference to its
@@ -237,7 +237,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// If the slice is not exactly `N` bytes long.
     #[track_caller]
     pub fn format_slice<T: AsRef<[u8]>>(&mut self, slice: T) -> &mut str {
-        self.format_slice_internal(slice.as_ref(), HEX_CHARS_LOWER)
+        self.format_slice_inner(slice.as_ref(), HEX_CHARS_LOWER)
     }
 
     /// Print a slice of bytes into this buffer and return a reference to its
@@ -248,19 +248,19 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// If the slice is not exactly `N` bytes long.
     #[track_caller]
     pub fn format_slice_upper<T: AsRef<[u8]>>(&mut self, slice: T) -> &mut str {
-        self.format_slice_internal(slice.as_ref(), HEX_CHARS_UPPER)
+        self.format_slice_inner(slice.as_ref(), HEX_CHARS_UPPER)
     }
 
     // Checks length
     #[track_caller]
-    fn format_slice_internal(&mut self, slice: &[u8], table: &[u8; 16]) -> &mut str {
+    fn format_slice_inner(&mut self, slice: &[u8], table: &[u8; 16]) -> &mut str {
         assert_eq!(slice.len(), N, "length mismatch");
-        self.format_internal(slice, table)
+        self.format_inner(slice, table)
     }
 
     // Doesn't check length
     #[inline]
-    fn format_internal(&mut self, input: &[u8], table: &[u8; 16]) -> &mut str {
+    fn format_inner(&mut self, input: &[u8], table: &[u8; 16]) -> &mut str {
         // SAFETY: Length was checked previously;
         // we only write only ASCII bytes.
         unsafe {
@@ -426,7 +426,7 @@ pub const fn const_encode<const N: usize, const PREFIX: bool>(
 /// # }
 /// ```
 pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
-    encode_to_slice_internal(input.as_ref(), output, HEX_CHARS_LOWER)
+    encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_LOWER)
 }
 
 /// Encodes `input` as a hex string using uppercase characters into a mutable
@@ -450,7 +450,7 @@ pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
     input: T,
     output: &mut [u8],
 ) -> Result<(), FromHexError> {
-    encode_to_slice_internal(input.as_ref(), output, HEX_CHARS_UPPER)
+    encode_to_slice_inner(input.as_ref(), output, HEX_CHARS_UPPER)
 }
 
 /// Encodes `data` as a hex string using lowercase characters.
@@ -468,7 +468,7 @@ pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
 /// ```
 #[cfg(feature = "alloc")]
 pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
-    encode_internal::<false>(data.as_ref(), HEX_CHARS_LOWER)
+    encode_inner::<false>(data.as_ref(), HEX_CHARS_LOWER)
 }
 
 /// Encodes `data` as a hex string using uppercase characters.
@@ -483,7 +483,7 @@ pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
 /// ```
 #[cfg(feature = "alloc")]
 pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
-    encode_internal::<false>(data.as_ref(), HEX_CHARS_UPPER)
+    encode_inner::<false>(data.as_ref(), HEX_CHARS_UPPER)
 }
 
 /// Encodes `data` as a prefixed hex string using lowercase characters.
@@ -498,7 +498,7 @@ pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
 /// ```
 #[cfg(feature = "alloc")]
 pub fn encode_prefixed<T: AsRef<[u8]>>(data: T) -> String {
-    encode_internal::<true>(data.as_ref(), HEX_CHARS_LOWER)
+    encode_inner::<true>(data.as_ref(), HEX_CHARS_LOWER)
 }
 
 /// Encodes `data` as a prefixed hex string using uppercase characters.
@@ -513,7 +513,7 @@ pub fn encode_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// ```
 #[cfg(feature = "alloc")]
 pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
-    encode_internal::<true>(data.as_ref(), HEX_CHARS_UPPER)
+    encode_inner::<true>(data.as_ref(), HEX_CHARS_UPPER)
 }
 
 /// Decodes a hex string into raw bytes.
@@ -545,7 +545,7 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// ```
 #[cfg(feature = "alloc")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
-    fn internal(input: &[u8]) -> Result<Vec<u8>, FromHexError> {
+    fn decode_inner(input: &[u8]) -> Result<Vec<u8>, FromHexError> {
         if unlikely(input.len() % 2 != 0) {
             return Err(FromHexError::OddLength);
         }
@@ -556,7 +556,7 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
         Ok(output)
     }
 
-    internal(input.as_ref())
+    decode_inner(input.as_ref())
 }
 
 /// Decode a hex string into a mutable bytes slice.
@@ -583,7 +583,7 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
 /// assert_eq!(&bytes, b"kiwi");
 /// ```
 pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
-    fn internal(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+    fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
         if unlikely(input.len() % 2 != 0) {
             return Err(FromHexError::OddLength);
         }
@@ -595,11 +595,11 @@ pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
         unsafe { _decode(input, output) }
     }
 
-    internal(input.as_ref(), output)
+    decode_to_slice_inner(input.as_ref(), output)
 }
 
 #[cfg(feature = "alloc")]
-fn encode_internal<const PREFIX: bool>(data: &[u8], table: &[u8; 16]) -> String {
+fn encode_inner<const PREFIX: bool>(data: &[u8], table: &[u8; 16]) -> String {
     let mut buf = vec![0; (PREFIX as usize + data.len()) * 2];
     let output = if PREFIX {
         buf[0] = b'0';
@@ -614,7 +614,7 @@ fn encode_internal<const PREFIX: bool>(data: &[u8], table: &[u8; 16]) -> String 
     unsafe { String::from_utf8_unchecked(buf) }
 }
 
-fn encode_to_slice_internal(
+fn encode_to_slice_inner(
     input: &[u8],
     output: &mut [u8],
     table: &[u8; 16],
