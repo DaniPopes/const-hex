@@ -12,6 +12,10 @@ documentation = "https://docs.rs/const-hex"
 homepage = "https://github.com/danipopes/const-hex"
 repository = "https://github.com/danipopes/const-hex"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 cfg-if = "1"
 hex = { version = ">=0.4.2", optional = true }
@@ -39,6 +43,3 @@ hex = ["dep:hex"]
 
 # Nightly features for better performance.
 nightly = []
-
-[lib]
-doc-scrape-examples = false
