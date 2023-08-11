@@ -1,3 +1,5 @@
+#![allow(clippy::format_collect)]
+
 use const_hex::Buffer;
 
 #[test]
