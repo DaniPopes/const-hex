@@ -23,6 +23,7 @@ use alloc::{
 /// # Examples
 ///
 /// ```
+/// #![allow(deprecated)]
 /// use const_hex::ToHex;
 ///
 /// assert_eq!("Hello world!".encode_hex::<String>(), "48656c6c6f20776f726c6421");
