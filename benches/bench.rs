@@ -26,70 +26,78 @@ impl<const N: usize> fmt::Display for StdFormat<N> {
 
 macro_rules! benches {
     ($($name:ident($value:expr))*) => {
-        mod encode_const_hex {
+        mod encode {
             use super::*;
 
-            $(
-                #[bench]
-                fn $name(b: &mut Bencher) {
-                    let buf = &mut [0; $value.len() * 2];
+            mod const_hex {
+                use super::*;
 
-                    b.iter(|| {
-                        let res = const_hex::encode_to_slice(black_box($value), black_box(buf));
-                        black_box(res.unwrap());
-                    });
-                }
-            )*
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $value.len() * 2];
+
+                        b.iter(|| {
+                            let res = ::const_hex::encode_to_slice(black_box($value), black_box(buf));
+                            black_box(res.unwrap());
+                        });
+                    }
+                )*
+            }
+
+            mod hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $value.len() * 2];
+
+                        b.iter(|| {
+                            let res = ::hex::encode_to_slice(black_box($value), black_box(buf));
+                            black_box(res.unwrap());
+                        });
+                    }
+                )*
+            }
         }
 
-        mod encode_hex {
+        mod format {
             use super::*;
 
-            $(
-                #[bench]
-                fn $name(b: &mut Bencher) {
-                    let buf = &mut [0; $value.len() * 2];
+            mod const_hex {
+                use super::*;
 
-                    b.iter(|| {
-                        let res = hex::encode_to_slice(black_box($value), black_box(buf));
-                        black_box(res.unwrap());
-                    });
-                }
-            )*
-        }
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let mut buf = Vec::with_capacity($value.len() * 2);
 
-        mod format_const_hex {
-            use super::*;
+                        b.iter(|| {
+                            buf.clear();
+                            write!(&mut buf, "{}", HexBufferFormat(black_box($value))).unwrap();
+                            black_box(&buf);
+                        });
+                    }
+                )*
+            }
 
-            $(
-                #[bench]
-                fn $name(b: &mut Bencher) {
-                    let mut buf = Vec::with_capacity($value.len() * 2);
+            mod std {
+                use super::*;
 
-                    b.iter(|| {
-                        buf.clear();
-                        write!(&mut buf, "{}", HexBufferFormat(black_box($value))).unwrap();
-                        black_box(&buf);
-                    });
-                }
-            )*
-        }
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let mut buf = Vec::with_capacity($value.len() * 2);
 
-        mod format_std {
-            use super::*;
-
-            $(
-                #[bench]
-                fn $name(b: &mut Bencher) {
-                    let mut buf = Vec::with_capacity($value.len() * 2);
-
-                    b.iter(|| {
-                        buf.clear();
-                        write!(&mut buf, "{}", StdFormat(black_box($value))).unwrap();
-                        black_box(&buf);
-                    });
-                }
-            )*
+                        b.iter(|| {
+                            buf.clear();
+                            write!(&mut buf, "{}", StdFormat(black_box($value))).unwrap();
+                            black_box(&buf);
+                        });
+                    }
+                )*
+            }
         }
     }
 }
