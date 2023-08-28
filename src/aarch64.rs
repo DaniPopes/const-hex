@@ -18,7 +18,6 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     // Load table and construct masks.
     let hex_table = vld1q_u8(super::get_chars_table::<UPPER>().as_ptr());
     let mask_lo = vdupq_n_u8(0x0F);
-    let mask_hi = vdupq_n_u8(0xF0);
 
     let input_chunks = input.chunks_exact(CHUNK_SIZE);
     let input_remainder = input_chunks.remainder();
@@ -28,7 +27,7 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
         // Load input bytes and mask to nibbles.
         let input_bytes = vld1q_u8(input_chunk.as_ptr() as *const u8);
         let mut lo = vandq_u8(input_bytes, mask_lo);
-        let mut hi = vshrq_n_u8(vandq_u8(input_bytes, mask_hi), 4);
+        let mut hi = vshrq_n_u8(input_bytes, 4);
 
         // Lookup the corresponding ASCII hex digit for each nibble.
         lo = vqtbl1q_u8(hex_table, lo);
