@@ -1,4 +1,4 @@
-use crate::default;
+use crate::generic;
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
@@ -16,7 +16,7 @@ cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 /// `output` must be a valid pointer to at least `2 * input.len()` bytes.
 pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
-        return default::encode::<UPPER>(input, output);
+        return generic::encode::<UPPER>(input, output);
     }
 
     // Load table and construct masks.
@@ -50,8 +50,8 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     }
 
     if !input_remainder.is_empty() {
-        default::encode::<UPPER>(input_remainder, output.add(i));
+        generic::encode::<UPPER>(input_remainder, output.add(i));
     }
 }
 
-pub(super) use default::decode;
+pub(super) use generic::decode;

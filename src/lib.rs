@@ -47,7 +47,7 @@ cfg_if! {
         mod x86;
         use x86 as imp;
     } else {
-        use default as imp;
+        use generic as imp;
     }
 }
 
@@ -628,7 +628,7 @@ fn encode_to_slice_inner<const UPPER: bool>(
     Ok(())
 }
 
-mod default {
+mod generic {
     use super::*;
 
     /// Default encoding function.

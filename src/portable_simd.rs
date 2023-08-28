@@ -1,4 +1,4 @@
-use crate::default;
+use crate::generic;
 use core::simd::u8x16;
 use core::slice;
 
@@ -13,7 +13,7 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     let mut i = 0;
     let (prefix, chunks, suffix) = input.as_simd::<CHUNK_SIZE>();
 
-    default::encode::<UPPER>(prefix, output);
+    generic::encode::<UPPER>(prefix, output);
     i += prefix.len() * 2;
 
     let hex_table = u8x16::from_array(*crate::get_chars_table::<UPPER>());
@@ -36,7 +36,7 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
         i += CHUNK_SIZE;
     }
 
-    default::encode::<UPPER>(suffix, output.add(i));
+    generic::encode::<UPPER>(suffix, output.add(i));
 }
 
-pub(super) use default::decode;
+pub(super) use generic::decode;
