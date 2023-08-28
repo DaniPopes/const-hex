@@ -1,5 +1,5 @@
 use crate::default;
-use core::simd::{u8x16, Swizzle};
+use core::simd::u8x16;
 use core::slice;
 
 const CHUNK_SIZE: usize = core::mem::size_of::<u8x16>();
@@ -40,9 +40,3 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 }
 
 pub(super) use default::decode;
-
-struct HexCharsTable<const UPPER: bool>;
-
-impl<const UPPER: bool> Swizzle<16, 16> for HexCharsTable<UPPER> {
-    const INDEX: [usize; 16] = [0; 16];
-}

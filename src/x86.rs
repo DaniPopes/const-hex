@@ -54,5 +54,4 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     }
 }
 
-// FIXME: x86 decode implementation.
 pub(super) use default::decode;
