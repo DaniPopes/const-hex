@@ -138,10 +138,6 @@ pub const HEX_CHARS_UPPER: &[u8; 16] = b"0123456789ABCDEF";
 /// [`u8::MAX`] is used for invalid values.
 pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
 
-pub unsafe fn encode2(input: &[u8], output: *mut u8) {
-    imp::encode::<false>(input, output)
-}
-
 /// A correctly sized stack allocation for the formatted bytes to be written
 /// into.
 ///
