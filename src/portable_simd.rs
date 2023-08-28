@@ -14,7 +14,7 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     let (prefix, chunks, suffix) = input.as_simd::<CHUNK_SIZE>();
 
     default::encode::<UPPER>(prefix, output);
-    i += prefix.len();
+    i += prefix.len() * 2;
 
     let hex_table = u8x16::from_array(*crate::get_chars_table::<UPPER>());
     for &chunk in chunks {
