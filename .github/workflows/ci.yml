@@ -68,10 +68,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@miri
         with:
           target: ${{ matrix.target }}
-      - uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: ${{ matrix.target }}
-
       - run: cargo miri setup --target ${{ matrix.target }} ${{ matrix.flags }}
       - run: cargo miri test --target ${{ matrix.target }} ${{ matrix.flags }}
 
