@@ -46,6 +46,9 @@ cfg_if! {
     } else if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
         mod x86;
         use x86 as imp;
+    } else if #[cfg(all(target_arch = "aarch64", target_feature = "neon"))] {
+        mod aarch64;
+        use aarch64 as imp;
     } else {
         use generic as imp;
     }
