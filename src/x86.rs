@@ -45,9 +45,8 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 
         // Store result into the output buffer.
         _mm_storeu_si128(output.add(i).cast(), hex_lo);
-        i += CHUNK_SIZE;
-        _mm_storeu_si128(output.add(i).cast(), hex_hi);
-        i += CHUNK_SIZE;
+        _mm_storeu_si128(output.add(i + CHUNK_SIZE).cast(), hex_hi);
+        i += CHUNK_SIZE * 2;
     }
 
     if !input_remainder.is_empty() {

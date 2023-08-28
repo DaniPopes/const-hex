@@ -14,21 +14,30 @@ env:
 
 jobs:
   test:
-    name: Rust ${{matrix.rust}}
+    name: Test
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
         rust: [nightly, beta, stable, 1.64]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{matrix.rust}}
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+      - uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+
       - name: Enable type layout randomization
         run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
         if: matrix.rust == 'nightly'
+
+      - uses: Swatinem/rust-cache@v2
+
       - run: cargo build
       - run: cargo test
       - run: cargo test --release
