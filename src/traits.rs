@@ -40,30 +40,28 @@ pub trait ToHex {
     fn encode_hex_upper<T: iter::FromIterator<char>>(&self) -> T;
 }
 
-struct BytesToHexChars<'a> {
+struct BytesToHexChars<'a, const UPPER: bool> {
     inner: core::slice::Iter<'a, u8>,
-    table: &'static [u8; 16],
     next: Option<char>,
 }
 
-impl<'a> BytesToHexChars<'a> {
-    fn new(inner: &'a [u8], table: &'static [u8; 16]) -> BytesToHexChars<'a> {
+impl<'a, const UPPER: bool> BytesToHexChars<'a, UPPER> {
+    fn new(inner: &'a [u8]) -> Self {
         BytesToHexChars {
             inner: inner.iter(),
-            table,
             next: None,
         }
     }
 }
 
-impl<'a> Iterator for BytesToHexChars<'a> {
+impl<const UPPER: bool> Iterator for BytesToHexChars<'_, UPPER> {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next.take() {
             Some(current) => Some(current),
             None => self.inner.next().map(|byte| {
-                let (high, low) = crate::byte2hex(*byte, self.table);
+                let (high, low) = crate::byte2hex::<UPPER>(*byte);
                 self.next = Some(low as char);
                 high as char
             }),
@@ -72,18 +70,18 @@ impl<'a> Iterator for BytesToHexChars<'a> {
 }
 
 #[inline]
-fn encode_to_iter<T: iter::FromIterator<char>>(source: &[u8], table: &'static [u8; 16]) -> T {
-    BytesToHexChars::new(source, table).collect()
+fn encode_to_iter<T: iter::FromIterator<char>, const UPPER: bool>(source: &[u8]) -> T {
+    BytesToHexChars::<UPPER>::new(source).collect()
 }
 
 #[allow(deprecated)]
 impl<T: AsRef<[u8]>> ToHex for T {
     fn encode_hex<U: iter::FromIterator<char>>(&self) -> U {
-        encode_to_iter(self.as_ref(), crate::HEX_CHARS_LOWER)
+        encode_to_iter::<_, false>(self.as_ref())
     }
 
     fn encode_hex_upper<U: iter::FromIterator<char>>(&self) -> U {
-        encode_to_iter(self.as_ref(), crate::HEX_CHARS_UPPER)
+        encode_to_iter::<_, true>(self.as_ref())
     }
 }
 

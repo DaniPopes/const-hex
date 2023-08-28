@@ -14,13 +14,13 @@ cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 /// # Safety
 ///
 /// Assumes `output.len() == 2 * input.len()`.
-pub(super) unsafe fn encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
+pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
-        return default::encode(input, output, table);
+        return default::encode::<UPPER>(input, output);
     }
 
     // Load table and construct masks.
-    let hex_table = _mm_loadu_si128(table.as_ptr().cast());
+    let hex_table = _mm_loadu_si128(super::get_chars_table::<UPPER>().as_ptr().cast());
     let mask_lo = _mm_set1_epi8(0x0F);
     #[allow(clippy::cast_possible_wrap)]
     let mask_hi = _mm_set1_epi8(0xF0u8 as i8);
@@ -54,7 +54,7 @@ pub(super) unsafe fn encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
     }
 
     if !input_remainder.is_empty() {
-        default::encode(input_remainder, output.get_unchecked_mut(i..), table);
+        default::encode::<UPPER>(input_remainder, output.get_unchecked_mut(i..));
     }
 }
 
