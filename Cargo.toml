@@ -41,5 +41,10 @@ serde = ["hex?/serde", "dep:serde"]
 # This should not be needed most of the time.
 hex = ["dep:hex"]
 
+# Support for the `portable-simd` nightly feature.
+# Note that `-Zbuild-std` may be necessary to unlock better performance than
+# the specialized implementations.
+portable-simd = []
+
 # Nightly features for better performance.
 nightly = []

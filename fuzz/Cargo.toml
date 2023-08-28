@@ -18,4 +18,5 @@ path = "fuzz_targets/fuzz_const_hex.rs"
 test = false
 doc = false
 
-[workspace]
+[features]
+portable-simd = ["const-hex/portable-simd"]

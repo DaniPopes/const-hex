@@ -17,6 +17,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics, inline_const))]
+#![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 #![allow(
     clippy::cast_lossless,
     clippy::inline_always,
@@ -39,7 +40,10 @@ use alloc::{string::String, vec::Vec};
 
 // The main encoding and decoding functions.
 cfg_if! {
-    if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
+    if #[cfg(feature = "portable-simd")] {
+        mod portable_simd;
+        use portable_simd as imp;
+    } else if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
         mod x86;
         use x86 as imp;
     } else {
@@ -133,6 +137,10 @@ pub const HEX_CHARS_UPPER: &[u8; 16] = b"0123456789ABCDEF";
 ///
 /// [`u8::MAX`] is used for invalid values.
 pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
+
+pub unsafe fn encode2(input: &[u8], output: *mut u8) {
+    imp::encode::<false>(input, output)
+}
 
 /// A correctly sized stack allocation for the formatted bytes to be written
 /// into.
