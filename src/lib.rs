@@ -263,7 +263,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
         // we only write only ASCII bytes.
         unsafe {
             let buf = self.as_mut_bytes();
-            let output = if PREFIX { &mut buf[2..] } else { &mut buf[..] };
+            let output = buf.as_mut_ptr().add(PREFIX as usize * 2);
             imp::encode::<UPPER>(input, output);
             str::from_utf8_unchecked_mut(buf)
         }
@@ -607,7 +607,7 @@ fn encode_inner<const UPPER: bool, const PREFIX: bool>(data: &[u8]) -> String {
         &mut buf[..]
     };
     // SAFETY: `output` is long enough (input.len() * 2).
-    unsafe { imp::encode::<UPPER>(data, output) };
+    unsafe { imp::encode::<UPPER>(data, output.as_mut_ptr()) };
     // SAFETY: We only write only ASCII bytes.
     unsafe { String::from_utf8_unchecked(buf) }
 }
@@ -620,7 +620,7 @@ fn encode_to_slice_inner<const UPPER: bool>(
         return Err(FromHexError::InvalidStringLength);
     }
     // SAFETY: Lengths are checked above.
-    unsafe { imp::encode::<UPPER>(input, output) };
+    unsafe { imp::encode::<UPPER>(input, output.as_mut_ptr()) };
     Ok(())
 }
 
@@ -631,16 +631,12 @@ mod default {
     ///
     /// # Safety
     ///
-    /// Assumes `output.len() == 2 * input.len()`.
-    pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
-        debug_assert_eq!(output.len(), 2 * input.len());
-        let mut i = 0;
-        for byte in input {
+    /// `output` must be a valid pointer to at least `2 * input.len()` bytes.
+    pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
+        for (i, byte) in input.iter().enumerate() {
             let (high, low) = byte2hex::<UPPER>(*byte);
-            *output.get_unchecked_mut(i) = high;
-            i = i.checked_add(1).unwrap_unchecked();
-            *output.get_unchecked_mut(i) = low;
-            i = i.checked_add(1).unwrap_unchecked();
+            output.add(i * 2).write(high);
+            output.add(i * 2 + 1).write(low);
         }
     }
 

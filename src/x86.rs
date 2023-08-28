@@ -13,8 +13,8 @@ cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 ///
 /// # Safety
 ///
-/// Assumes `output.len() == 2 * input.len()`.
-pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
+/// `output` must be a valid pointer to at least `2 * input.len()` bytes.
+pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
         return default::encode::<UPPER>(input, output);
     }
@@ -44,17 +44,14 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) 
         let hex_hi = _mm_unpackhi_epi8(hi, lo);
 
         // Store result into the output buffer.
-        let ptr = output.as_mut_ptr().add(i);
-        i = i.checked_add(CHUNK_SIZE).unwrap_unchecked();
-        _mm_storeu_si128(ptr.cast(), hex_lo);
-
-        let ptr = output.as_mut_ptr().add(i);
-        i = i.checked_add(CHUNK_SIZE).unwrap_unchecked();
-        _mm_storeu_si128(ptr.cast(), hex_hi);
+        _mm_storeu_si128(output.add(i).cast(), hex_lo);
+        i += CHUNK_SIZE;
+        _mm_storeu_si128(output.add(i).cast(), hex_hi);
+        i += CHUNK_SIZE;
     }
 
     if !input_remainder.is_empty() {
-        default::encode::<UPPER>(input_remainder, output.get_unchecked_mut(i..));
+        default::encode::<UPPER>(input_remainder, output.add(i));
     }
 }
 
