@@ -58,9 +58,8 @@ jobs:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
         flags: [--no-default-features, "", --all-features]
         exclude:
-          # miri doesn't implement some aarch intrinsics (`llvm.aarch64.neon.tbl1.v16i8`)
+          # miri doesn't implement neon intrinsics.
           - target: aarch64-unknown-linux-gnu
-            flags: --all-features
     env:
       MIRIFLAGS: -Zmiri-strict-provenance
     steps:
