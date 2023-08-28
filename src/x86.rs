@@ -1,4 +1,4 @@
-use crate::encode_default;
+use crate::default;
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
@@ -14,9 +14,9 @@ cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 /// # Safety
 ///
 /// Assumes `output.len() == 2 * input.len()`.
-pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
+pub(super) unsafe fn encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
-        return encode_default(input, output, table);
+        return default::encode(input, output, table);
     }
 
     // Load table and construct masks.
@@ -54,6 +54,9 @@ pub(super) unsafe fn _encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) 
     }
 
     if !input_remainder.is_empty() {
-        encode_default(input_remainder, output.get_unchecked_mut(i..), table);
+        default::encode(input_remainder, output.get_unchecked_mut(i..), table);
     }
 }
+
+// FIXME: x86 decode implementation.
+pub(super) use default::decode;

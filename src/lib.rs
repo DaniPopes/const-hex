@@ -41,14 +41,11 @@ use alloc::{string::String, vec::Vec};
 cfg_if! {
     if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
         mod x86;
-        use x86::_encode;
+        use x86 as imp;
     } else {
-        use encode_default as _encode;
+        use default as imp;
     }
 }
-
-// FIXME: x86 decode implementation.
-use decode_default as _decode;
 
 // If the `hex` feature is enabled, re-export the `hex` crate's traits.
 // Otherwise, use our own with the more optimized implementation.
@@ -267,7 +264,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
         unsafe {
             let buf = self.as_mut_bytes();
             let output = if PREFIX { &mut buf[2..] } else { &mut buf[..] };
-            _encode(input, output, table);
+            imp::encode(input, output, table);
             str::from_utf8_unchecked_mut(buf)
         }
     }
@@ -553,7 +550,7 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
         let input = strip_prefix(input);
         let mut output = vec![0; input.len() / 2];
         // SAFETY: Lengths are checked above.
-        unsafe { _decode(input, &mut output)? };
+        unsafe { imp::decode(input, &mut output)? };
         Ok(output)
     }
 
@@ -593,7 +590,7 @@ pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
             return Err(FromHexError::InvalidStringLength);
         }
         // SAFETY: Lengths are checked above.
-        unsafe { _decode(input, output) }
+        unsafe { imp::decode(input, output) }
     }
 
     decode_to_slice_inner(input.as_ref(), output)
@@ -610,7 +607,7 @@ fn encode_inner<const PREFIX: bool>(data: &[u8], table: &[u8; 16]) -> String {
         &mut buf[..]
     };
     // SAFETY: `output` is long enough (input.len() * 2).
-    unsafe { _encode(data, output, table) };
+    unsafe { imp::encode(data, output, table) };
     // SAFETY: We only write only ASCII bytes.
     unsafe { String::from_utf8_unchecked(buf) }
 }
@@ -624,53 +621,57 @@ fn encode_to_slice_inner(
         return Err(FromHexError::InvalidStringLength);
     }
     // SAFETY: Lengths are checked above.
-    unsafe { _encode(input, output, table) };
+    unsafe { imp::encode(input, output, table) };
     Ok(())
 }
 
-/// Default encoding function.
-///
-/// # Safety
-///
-/// Assumes `output.len() == 2 * input.len()`.
-unsafe fn encode_default(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
-    debug_assert_eq!(output.len(), 2 * input.len());
-    let mut i = 0;
-    for byte in input {
-        let (high, low) = byte2hex(*byte, table);
-        *output.get_unchecked_mut(i) = high;
-        i = i.checked_add(1).unwrap_unchecked();
-        *output.get_unchecked_mut(i) = low;
-        i = i.checked_add(1).unwrap_unchecked();
-    }
-}
+mod default {
+    use super::*;
 
-/// Default decoding function.
-///
-/// # Safety
-///
-/// Assumes `output.len() == input.len() / 2`.
-unsafe fn decode_default(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
-    macro_rules! next {
-        ($var:ident, $i:expr) => {
-            let hex = *input.get_unchecked($i);
-            let $var = HEX_DECODE_LUT[hex as usize];
-            if unlikely($var == u8::MAX) {
-                return Err(FromHexError::InvalidHexCharacter {
-                    c: hex as char,
-                    index: $i,
-                });
-            }
-        };
+    /// Default encoding function.
+    ///
+    /// # Safety
+    ///
+    /// Assumes `output.len() == 2 * input.len()`.
+    pub(super) unsafe fn encode(input: &[u8], output: &mut [u8], table: &[u8; 16]) {
+        debug_assert_eq!(output.len(), 2 * input.len());
+        let mut i = 0;
+        for byte in input {
+            let (high, low) = byte2hex(*byte, table);
+            *output.get_unchecked_mut(i) = high;
+            i = i.checked_add(1).unwrap_unchecked();
+            *output.get_unchecked_mut(i) = low;
+            i = i.checked_add(1).unwrap_unchecked();
+        }
     }
 
-    debug_assert_eq!(output.len(), input.len() / 2);
-    for (i, byte) in output.iter_mut().enumerate() {
-        next!(high, i * 2);
-        next!(low, i * 2 + 1);
-        *byte = high << 4 | low;
+    /// Default decoding function.
+    ///
+    /// # Safety
+    ///
+    /// Assumes `output.len() == input.len() / 2`.
+    pub(super) unsafe fn decode(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+        macro_rules! next {
+            ($var:ident, $i:expr) => {
+                let hex = *input.get_unchecked($i);
+                let $var = HEX_DECODE_LUT[hex as usize];
+                if unlikely($var == u8::MAX) {
+                    return Err(FromHexError::InvalidHexCharacter {
+                        c: hex as char,
+                        index: $i,
+                    });
+                }
+            };
+        }
+
+        debug_assert_eq!(output.len(), input.len() / 2);
+        for (i, byte) in output.iter_mut().enumerate() {
+            next!(high, i * 2);
+            next!(low, i * 2 + 1);
+            *byte = high << 4 | low;
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 #[inline]
