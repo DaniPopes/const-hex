@@ -40,7 +40,9 @@ use alloc::{string::String, vec::Vec};
 
 // The main encoding and decoding functions.
 cfg_if! {
-    if #[cfg(feature = "portable-simd")] {
+    if #[cfg(feature = "force-generic")] {
+        use generic as imp;
+    } else if #[cfg(feature = "portable-simd")] {
         mod portable_simd;
         use portable_simd as imp;
     } else if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {

@@ -34,6 +34,9 @@ default = ["std"]
 std = ["hex?/std", "serde?/std", "alloc"]
 alloc = ["hex?/alloc", "serde?/alloc"]
 
+# Forces generic implementation, overriding any specialized implementation (e.g. x86 or aarch64)
+force-generic = []
+
 # Serde support. Use with `#[serde(with = "const_hex")]`
 serde = ["hex?/serde", "dep:serde"]
 

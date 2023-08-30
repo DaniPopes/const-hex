@@ -41,10 +41,10 @@ jobs:
 
       - run: cargo build
       - run: cargo test
-      - run: cargo test --release
       - run: cargo build --no-default-features
       - run: cargo test --tests --no-default-features
-      - run: cargo test --tests --no-default-features --release --all-features
+      - run: cargo test --tests --no-default-features --features force-generic
+      - run: cargo test --tests --no-default-features --features nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
         if: matrix.rust == 'nightly'
@@ -57,7 +57,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
-        flags: [--no-default-features, "", --all-features]
+        flags: [--no-default-features, "", --all-features, --features force-generic]
         exclude:
           # miri doesn't implement neon intrinsics.
           - target: aarch64-unknown-linux-gnu
