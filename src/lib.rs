@@ -687,7 +687,7 @@ const fn byte2hex<const UPPER: bool>(byte: u8) -> (u8, u8) {
 #[inline]
 fn strip_prefix(bytes: &[u8]) -> &[u8] {
     if bytes.starts_with(b"0x") {
-        &bytes[2..]
+        unsafe { bytes.get_unchecked(2..) }
     } else {
         bytes
     }
