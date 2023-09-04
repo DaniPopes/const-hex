@@ -41,18 +41,24 @@ test format_std::bench3_4096       ... bench:      61,688 ns/iter (+/- 1,994)
 
 ## Acknowledgements
 
--   [`hex`] for the initial encoding/decoding implementations
--   [dtolnay]/[itoa] for the initial crate/library API layout
+- [`hex`] for the initial encoding/decoding implementations
+- [dtolnay]/[itoa] for the initial crate/library API layout
 
 [`hex`]: https://crates.io/crates/hex
 [dtolnay]: https://github.com/dtolnay
 [itoa]: https://github.com/dtolnay/itoa
 
-## License
+#### License
 
-Licensed under either of [Apache License, Version 2.0](./LICENSE-APACHE) or
-[MIT license](./LICENSE-MIT) at your option.
+<sup>
+Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
+2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
+</sup>
 
+<br>
+
+<sub>
 Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
-be dual licensed as above, without any additional terms or conditions.
+for inclusion in these crates by you, as defined in the Apache-2.0 license,
+shall be dual licensed as above, without any additional terms or conditions.
+</sub>

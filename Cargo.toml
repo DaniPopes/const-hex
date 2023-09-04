@@ -34,15 +34,15 @@ default = ["std"]
 std = ["hex?/std", "serde?/std", "alloc"]
 alloc = ["hex?/alloc", "serde?/alloc"]
 
-# Forces generic implementation, overriding any specialized implementation (e.g. x86 or aarch64)
-force-generic = []
-
 # Serde support. Use with `#[serde(with = "const_hex")]`
 serde = ["hex?/serde", "dep:serde"]
 
 # Use `hex`'s traits instead of our own.
 # This should not be needed most of the time.
 hex = ["dep:hex"]
+
+# Forces generic implementation, overriding any specialized implementation (e.g. x86 or aarch64)
+force-generic = []
 
 # Support for the `portable-simd` nightly feature.
 # Note that `-Zbuild-std` may be necessary to unlock better performance than
