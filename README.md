@@ -22,7 +22,10 @@ _Version requirement: rustc 1.64+_
 This crate is 5 to 20 times faster than [`hex`] in encoding and decoding, and
 30+ times faster than `libstd` in formatting.
 
-You can run the following benchmarks with `cargo bench --features std` on a
+The following benchmarks were ran on an AMD Ryzen 9 5900X, compiled with
+`rustc 1.74.0-nightly (203c57dbe 2023-09-17)` on `x86_64-unknown-linux-gnu`.
+
+You can run these benchmarks with `cargo bench --features std` on a
 nightly compiler.
 
 ```log
