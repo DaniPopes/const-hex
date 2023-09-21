@@ -1,0 +1,202 @@
+#![feature(test)]
+
+extern crate test;
+
+#[rustfmt::skip]
+mod data;
+
+use std::fmt;
+use std::io::Write;
+use test::{black_box, Bencher};
+
+struct HexBufferFormat<const N: usize>(&'static [u8; N]);
+impl<const N: usize> fmt::Display for HexBufferFormat<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buffer = const_hex::Buffer::<N>::new();
+        f.write_str(buffer.format(self.0))
+    }
+}
+
+struct StdFormat<const N: usize>(&'static [u8; N]);
+impl<const N: usize> fmt::Display for StdFormat<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for &byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+macro_rules! benches {
+    ($($name:ident($enc:expr, $dec:expr))*) => {
+        #[cfg(feature = "alloc")]
+        mod decode {
+            use super::*;
+
+            mod const_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::const_hex::decode(black_box($dec))
+                        });
+                    }
+                )*
+            }
+
+            mod hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::hex::decode(black_box($dec))
+                        });
+                    }
+                )*
+            }
+        }
+
+        mod decode_to_slice {
+            use super::*;
+
+            mod const_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $dec.len() / 2];
+
+                        b.iter(|| {
+                            let res = ::const_hex::decode_to_slice(black_box($dec), black_box(buf));
+                            black_box(res.unwrap());
+                        });
+                    }
+                )*
+            }
+
+            mod hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $dec.len() / 2];
+
+                        b.iter(|| {
+                            ::hex::decode_to_slice(black_box($dec), black_box(buf))
+                        });
+                    }
+                )*
+            }
+        }
+
+        #[cfg(feature = "alloc")]
+        mod encode {
+            use super::*;
+
+            mod const_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::const_hex::encode(black_box($enc))
+                        });
+                    }
+                )*
+            }
+
+            mod hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::hex::encode(black_box($enc))
+                        });
+                    }
+                )*
+            }
+        }
+
+        mod encode_to_slice {
+            use super::*;
+
+            mod const_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $enc.len() * 2];
+                        b.iter(|| {
+                            ::const_hex::encode_to_slice(black_box($enc), black_box(buf))
+                        });
+                    }
+                )*
+            }
+
+            mod hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $enc.len() * 2];
+                        b.iter(|| {
+                            ::hex::encode_to_slice(black_box($enc), black_box(buf))
+                        });
+                    }
+                )*
+            }
+        }
+
+        mod format {
+            use super::*;
+
+            mod const_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let mut buf = Vec::with_capacity($enc.len() * 2);
+                        b.iter(|| {
+                            buf.clear();
+                            write!(&mut buf, "{}", HexBufferFormat(black_box($enc)))
+                        });
+                    }
+                )*
+            }
+
+            mod std {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let mut buf = Vec::with_capacity($enc.len() * 2);
+                        b.iter(|| {
+                            buf.clear();
+                            write!(&mut buf, "{}", StdFormat(black_box($enc)))
+                        });
+                    }
+                )*
+            }
+        }
+    }
+}
+
+benches! {
+    bench1_32(data::ENC_32, data::DEC_32)
+    bench2_256(data::ENC_256, data::DEC_256)
+    bench3_2048(data::ENC_2048, data::DEC_2048)
+    bench4_16384(data::ENC_16384, data::DEC_16384)
+}
