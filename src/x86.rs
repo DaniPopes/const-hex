@@ -1,3 +1,5 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+
 use crate::generic;
 
 #[cfg(target_arch = "x86")]

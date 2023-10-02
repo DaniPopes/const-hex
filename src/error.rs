@@ -8,6 +8,7 @@ use core::fmt;
 pub enum FromHexError {
     /// An invalid character was found. Valid ones are: `0...9`, `a...f`
     /// or `A...F`.
+    #[allow(missing_docs)]
     InvalidHexCharacter { c: char, index: usize },
 
     /// A hex string's length needs to be even, as two digits correspond to
@@ -24,7 +25,8 @@ pub enum FromHexError {
 impl std::error::Error for FromHexError {}
 
 impl fmt::Display for FromHexError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             FromHexError::InvalidHexCharacter { c, index } => {
                 write!(f, "Invalid character {c:?} at position {index}")

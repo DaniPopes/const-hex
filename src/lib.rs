@@ -18,9 +18,23 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics, inline_const))]
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
+#![warn(
+    missing_copy_implementations,
+    missing_debug_implementations,
+    missing_docs,
+    unreachable_pub,
+    unsafe_op_in_unsafe_fn,
+    clippy::missing_const_for_fn,
+    clippy::missing_inline_in_public_items,
+    clippy::all,
+    rustdoc::all
+)]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+#![deny(unused_must_use, rust_2018_idioms)]
 #![allow(
     clippy::cast_lossless,
     clippy::inline_always,
+    clippy::let_unit_value,
     clippy::must_use_candidate,
     clippy::wildcard_imports,
     unsafe_op_in_unsafe_fn,
@@ -32,11 +46,16 @@
 extern crate alloc;
 
 use cfg_if::cfg_if;
+use core::fmt;
 use core::slice;
 use core::str;
 
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
+
+// `cpufeatures` may be unused when `force-generic` is enabled.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use cpufeatures as _;
 
 // The main encoding and decoding functions.
 cfg_if! {
@@ -60,7 +79,7 @@ cfg_if! {
 // Otherwise, use our own with the more optimized implementation.
 cfg_if! {
     if #[cfg(feature = "hex")] {
-        pub extern crate hex;
+        pub use hex;
 
         #[doc(inline)]
         pub use hex::{FromHex, FromHexError, ToHex};
@@ -92,10 +111,12 @@ cfg_if! {
         // suggests that the function is unlikely to be called
         #[inline(always)]
         #[cold]
+        #[allow(clippy::missing_const_for_fn)]
         fn cold() {}
 
         #[inline(always)]
         #[allow(dead_code)]
+        #[allow(clippy::missing_const_for_fn)]
         fn likely(b: bool) -> bool {
             if !b {
                 cold();
@@ -104,6 +125,7 @@ cfg_if! {
         }
 
         #[inline(always)]
+        #[allow(clippy::missing_const_for_fn)]
         fn unlikely(b: bool) -> bool {
             if b {
                 cold();
@@ -161,12 +183,13 @@ pub const HEX_DECODE_LUT: &[u8; 256] = &make_decode_lut();
 /// ```
 #[must_use]
 #[repr(C)]
+#[derive(Clone)]
 pub struct Buffer<const N: usize, const PREFIX: bool = false> {
     // Workaround for Rust issue #76560:
     // https://github.com/rust-lang/rust/issues/76560
     // This would ideally be `[u8; (N + PREFIX as usize) * 2]`
     prefix: [u8; 2],
-    bytes: [u16; N],
+    bytes: [[u8; 2]; N],
 }
 
 impl<const N: usize, const PREFIX: bool> Default for Buffer<N, PREFIX> {
@@ -176,10 +199,10 @@ impl<const N: usize, const PREFIX: bool> Default for Buffer<N, PREFIX> {
     }
 }
 
-impl<const N: usize, const PREFIX: bool> Clone for Buffer<N, PREFIX> {
+impl<const N: usize, const PREFIX: bool> fmt::Debug for Buffer<N, PREFIX> {
     #[inline]
-    fn clone(&self) -> Self {
-        Self::new()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Buffer").field(&self.as_str()).finish()
     }
 }
 
@@ -187,13 +210,18 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// The length of the buffer in bytes.
     pub const LEN: usize = (N + PREFIX as usize) * 2;
 
+    const ASSERT_SIZE: () = assert!(core::mem::size_of::<Self>() == 2 + N * 2, "invalid size");
+    const ASSERT_ALIGNMENT: () = assert!(core::mem::align_of::<Self>() == 1, "invalid alignment");
+
     /// This is a cheap operation; you don't need to worry about reusing buffers
     /// for efficiency.
     #[inline]
     pub const fn new() -> Self {
+        let () = Self::ASSERT_SIZE;
+        let () = Self::ASSERT_ALIGNMENT;
         Self {
             prefix: if PREFIX { [b'0', b'x'] } else { [0, 0] },
-            bytes: [0; N],
+            bytes: [[0; 2]; N],
         }
     }
 
@@ -214,7 +242,8 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
         let mut i = 0;
         while i < N {
             let (high, low) = byte2hex::<UPPER>(array[i]);
-            self.bytes[i] = u16::from_le_bytes([high, low]);
+            self.bytes[i][0] = high;
+            self.bytes[i][1] = low;
             i += 1;
         }
         self
@@ -243,6 +272,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     ///
     /// If the slice is not exactly `N` bytes long.
     #[track_caller]
+    #[inline]
     pub fn format_slice<T: AsRef<[u8]>>(&mut self, slice: T) -> &mut str {
         self.format_slice_inner::<false>(slice.as_ref())
     }
@@ -254,6 +284,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     ///
     /// If the slice is not exactly `N` bytes long.
     #[track_caller]
+    #[inline]
     pub fn format_slice_upper<T: AsRef<[u8]>>(&mut self, slice: T) -> &mut str {
         self.format_slice_inner::<true>(slice.as_ref())
     }
@@ -320,7 +351,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     ///
     /// See Rust tracking issue [#76001](https://github.com/rust-lang/rust/issues/76001).
     #[inline]
-    pub fn as_byte_array<const LEN: usize>(&self) -> &[u8; LEN] {
+    pub const fn as_byte_array<const LEN: usize>(&self) -> &[u8; LEN] {
         maybe_const_assert!(LEN == Self::LEN, "`LEN` must be equal to `Self::LEN`");
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
         unsafe { &*self.as_ptr().cast::<[u8; LEN]>() }
@@ -366,6 +397,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// # Safety
     ///
     /// See [`as_mut_bytes`](Buffer::as_mut_bytes).
+    #[inline]
     pub unsafe fn buffer(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self.bytes.as_mut_ptr().cast(), N * 2) }
     }
@@ -376,11 +408,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// function returns, or else it will end up pointing to garbage.
     #[inline]
     pub const fn as_ptr(&self) -> *const u8 {
-        if PREFIX {
-            self.prefix.as_ptr()
-        } else {
-            self.bytes.as_ptr().cast::<u8>()
-        }
+        unsafe { (self as *const Self).cast::<u8>().add(!PREFIX as usize * 2) }
     }
 
     /// Returns an unsafe mutable pointer to the slice's buffer.
@@ -389,11 +417,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// function returns, or else it will end up pointing to garbage.
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        if PREFIX {
-            self.prefix.as_mut_ptr()
-        } else {
-            self.bytes.as_mut_ptr().cast::<u8>()
-        }
+        unsafe { (self as *mut Self).cast::<u8>().add(!PREFIX as usize * 2) }
     }
 }
 
@@ -432,6 +456,7 @@ pub const fn const_encode<const N: usize, const PREFIX: bool>(
 /// # Ok(())
 /// # }
 /// ```
+#[inline]
 pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
     encode_to_slice_inner::<false>(input.as_ref(), output)
 }
@@ -453,6 +478,7 @@ pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
 /// # Ok(())
 /// # }
 /// ```
+#[inline]
 pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
     input: T,
     output: &mut [u8],
@@ -474,6 +500,7 @@ pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
 /// assert_eq!(const_hex::encode([1, 2, 3, 15, 16]), "0102030f10");
 /// ```
 #[cfg(feature = "alloc")]
+#[inline]
 pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
     encode_inner::<false, false>(data.as_ref())
 }
@@ -489,6 +516,7 @@ pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
 /// assert_eq!(const_hex::encode_upper([1, 2, 3, 15, 16]), "0102030F10");
 /// ```
 #[cfg(feature = "alloc")]
+#[inline]
 pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
     encode_inner::<true, false>(data.as_ref())
 }
@@ -504,6 +532,7 @@ pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
 /// assert_eq!(const_hex::encode_prefixed([1, 2, 3, 15, 16]), "0x0102030f10");
 /// ```
 #[cfg(feature = "alloc")]
+#[inline]
 pub fn encode_prefixed<T: AsRef<[u8]>>(data: T) -> String {
     encode_inner::<false, true>(data.as_ref())
 }
@@ -519,6 +548,7 @@ pub fn encode_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// assert_eq!(const_hex::encode_upper_prefixed([1, 2, 3, 15, 16]), "0x0102030F10");
 /// ```
 #[cfg(feature = "alloc")]
+#[inline]
 pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
     encode_inner::<true, true>(data.as_ref())
 }
@@ -551,6 +581,7 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// assert!(const_hex::decode("foo").is_err());
 /// ```
 #[cfg(feature = "alloc")]
+#[inline]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
     fn decode_inner(input: &[u8]) -> Result<Vec<u8>, FromHexError> {
         if unlikely(input.len() % 2 != 0) {
@@ -589,6 +620,7 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
 /// const_hex::decode_to_slice("0x6b697769", &mut bytes).unwrap();
 /// assert_eq!(&bytes, b"kiwi");
 /// ```
+#[inline]
 pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
     fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
         if unlikely(input.len() % 2 != 0) {
@@ -644,8 +676,10 @@ mod generic {
     pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
         for (i, byte) in input.iter().enumerate() {
             let (high, low) = byte2hex::<UPPER>(*byte);
-            output.add(i * 2).write(high);
-            output.add(i * 2 + 1).write(low);
+            unsafe {
+                output.add(i * 2).write(high);
+                output.add(i * 2 + 1).write(low);
+            }
         }
     }
 
@@ -657,7 +691,7 @@ mod generic {
     pub(super) unsafe fn decode(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
         macro_rules! next {
             ($var:ident, $i:expr) => {
-                let hex = *input.get_unchecked($i);
+                let hex = unsafe { *input.get_unchecked($i) };
                 let $var = HEX_DECODE_LUT[hex as usize];
                 if unlikely($var == u8::MAX) {
                     return Err(FromHexError::InvalidHexCharacter {

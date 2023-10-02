@@ -3,8 +3,19 @@
 use const_hex::Buffer;
 
 #[test]
-#[cfg_attr(miri, ignore)] // false positive
-fn prefix() {
+fn buffer_fmt() {
+    let mut buffer = Buffer::<256, true>::new();
+    buffer.format(&ALL);
+    let s = format!("{buffer:?}");
+    let pre = "Buffer(\"0x";
+    let post = "\")";
+    assert_eq!(&s[..pre.len()], pre);
+    assert_eq!(&s[s.len() - post.len()..], post);
+    assert_lower(&s[pre.len()..s.len() - post.len()]);
+}
+
+#[test]
+fn buffer_prefix() {
     let mut buffer = Buffer::<256, true>::new();
     let s = buffer.format(&ALL);
     assert_eq!(&s[..2], "0x");
@@ -12,41 +23,41 @@ fn prefix() {
 }
 
 #[test]
-fn array_lower() {
+fn buffer_array_lower() {
     let mut buffer = Buffer::<256>::new();
     let s = buffer.format(&ALL);
     assert_lower(s);
 }
 
 #[test]
-fn array_upper() {
+fn buffer_array_upper() {
     let mut buffer = Buffer::<256>::new();
     let s = buffer.format_upper(&ALL);
     assert_upper(s);
 }
 
 #[test]
-fn slice_lower() {
+fn buffer_slice_lower() {
     let mut buffer = Buffer::<256>::new();
     let s = buffer.format_slice(ALL);
     assert_lower(s);
 }
 
 #[test]
-fn slice_upper() {
+fn buffer_slice_upper() {
     let mut buffer = Buffer::<256>::new();
     let s = buffer.format_slice_upper(ALL);
     assert_upper(s);
 }
 
 #[test]
-fn const_lower() {
+fn buffer_const_lower() {
     const BUFFER: Buffer<256> = Buffer::new().const_format(&ALL);
     assert_lower(BUFFER.as_str());
 }
 
 #[test]
-fn const_upper() {
+fn buffer_const_upper() {
     const BUFFER: Buffer<256> = Buffer::new().const_format_upper(&ALL);
     assert_upper(BUFFER.as_str());
 }

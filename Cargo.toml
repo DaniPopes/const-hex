@@ -11,6 +11,7 @@ keywords = ["hex", "bytes", "fmt"]
 documentation = "https://docs.rs/const-hex"
 homepage = "https://github.com/danipopes/const-hex"
 repository = "https://github.com/danipopes/const-hex"
+exclude = [".github/", "benches/", "fuzz/", "tests/"]
 
 [package.metadata.docs.rs]
 all-features = true

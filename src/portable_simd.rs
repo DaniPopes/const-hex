@@ -13,7 +13,8 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     let mut i = 0;
     let (prefix, chunks, suffix) = input.as_simd::<CHUNK_SIZE>();
 
-    generic::encode::<UPPER>(prefix, output);
+    // SAFETY: ensured by caller.
+    unsafe { generic::encode::<UPPER>(prefix, output) };
     i += prefix.len() * 2;
 
     let hex_table = u8x16::from_array(*crate::get_chars_table::<UPPER>());
@@ -30,13 +31,17 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
         let (hex_lo, hex_hi) = u8x16::interleave(hi, lo);
 
         // Store result into the output buffer.
-        hex_lo.copy_to_slice(slice::from_raw_parts_mut(output.add(i), CHUNK_SIZE));
-        i += CHUNK_SIZE;
-        hex_hi.copy_to_slice(slice::from_raw_parts_mut(output.add(i), CHUNK_SIZE));
-        i += CHUNK_SIZE;
+        // SAFETY: ensured by caller.
+        unsafe {
+            hex_lo.copy_to_slice(slice::from_raw_parts_mut(output.add(i), CHUNK_SIZE));
+            i += CHUNK_SIZE;
+            hex_hi.copy_to_slice(slice::from_raw_parts_mut(output.add(i), CHUNK_SIZE));
+            i += CHUNK_SIZE;
+        }
     }
 
-    generic::encode::<UPPER>(suffix, output.add(i));
+    // SAFETY: ensured by caller.
+    unsafe { generic::encode::<UPPER>(suffix, output.add(i)) };
 }
 
 pub(super) use generic::decode;
