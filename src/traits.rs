@@ -77,10 +77,12 @@ fn encode_to_iter<T: iter::FromIterator<char>, const UPPER: bool>(source: &[u8])
 
 #[allow(deprecated)]
 impl<T: AsRef<[u8]>> ToHex for T {
+    #[inline]
     fn encode_hex<U: iter::FromIterator<char>>(&self) -> U {
         encode_to_iter::<_, false>(self.as_ref())
     }
 
+    #[inline]
     fn encode_hex_upper<U: iter::FromIterator<char>>(&self) -> U {
         encode_to_iter::<_, true>(self.as_ref())
     }
@@ -100,6 +102,7 @@ impl<T: AsRef<[u8]>> ToHex for T {
 /// # Ok::<(), const_hex::FromHexError>(())
 /// ```
 pub trait FromHex: Sized {
+    /// The associated error which can be returned from parsing.
     type Error;
 
     /// Creates an instance of type `Self` from the given hex string, or fails
@@ -114,6 +117,7 @@ pub trait FromHex: Sized {
 impl<U: FromHex> FromHex for Box<U> {
     type Error = U::Error;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         Ok(Box::new(FromHex::from_hex(hex.as_ref())?))
     }
@@ -127,6 +131,7 @@ where
 {
     type Error = <U::Owned as FromHex>::Error;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         Ok(Cow::Owned(FromHex::from_hex(hex.as_ref())?))
     }
@@ -136,6 +141,7 @@ where
 impl<U: FromHex> FromHex for Rc<U> {
     type Error = U::Error;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         Ok(Rc::new(FromHex::from_hex(hex.as_ref())?))
     }
@@ -145,6 +151,7 @@ impl<U: FromHex> FromHex for Rc<U> {
 impl<U: FromHex> FromHex for Arc<U> {
     type Error = U::Error;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         Ok(Arc::new(FromHex::from_hex(hex.as_ref())?))
     }
@@ -154,6 +161,7 @@ impl<U: FromHex> FromHex for Arc<U> {
 impl FromHex for Vec<u8> {
     type Error = crate::FromHexError;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         crate::decode(hex.as_ref())
     }
@@ -163,6 +171,7 @@ impl FromHex for Vec<u8> {
 impl FromHex for Vec<i8> {
     type Error = crate::FromHexError;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         let vec = crate::decode(hex.as_ref())?;
         // SAFETY: transmuting `u8` to `i8` is safe.
@@ -174,6 +183,7 @@ impl FromHex for Vec<i8> {
 impl FromHex for Box<[u8]> {
     type Error = crate::FromHexError;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         <Vec<u8>>::from_hex(hex).map(Vec::into_boxed_slice)
     }
@@ -183,6 +193,7 @@ impl FromHex for Box<[u8]> {
 impl FromHex for Box<[i8]> {
     type Error = crate::FromHexError;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         <Vec<i8>>::from_hex(hex).map(Vec::into_boxed_slice)
     }
@@ -191,6 +202,7 @@ impl FromHex for Box<[i8]> {
 impl<const N: usize> FromHex for [u8; N] {
     type Error = crate::FromHexError;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         let mut buf = [0u8; N];
         crate::decode_to_slice(hex.as_ref(), &mut buf)?;
@@ -201,6 +213,7 @@ impl<const N: usize> FromHex for [u8; N] {
 impl<const N: usize> FromHex for [i8; N] {
     type Error = crate::FromHexError;
 
+    #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         let mut buf = [0u8; N];
         crate::decode_to_slice(hex.as_ref(), &mut buf)?;
