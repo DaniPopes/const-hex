@@ -300,6 +300,56 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
     encode_inner::<true, true>(data.as_ref())
 }
 
+/// Returns `true` if the input is a valid hex string and can be decoded successfully.
+///
+/// # Examples
+///
+/// ```
+/// assert!(const_hex::check("48656c6c6f20776f726c6421").is_ok());
+/// assert!(const_hex::check("0x48656c6c6f20776f726c6421").is_ok());
+///
+/// assert!(const_hex::check("48656c6c6f20776f726c642").is_err());
+/// assert!(const_hex::check("Hello world!").is_err());
+/// ```
+#[inline]
+pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
+    fn check_inner(input: &[u8]) -> Result<(), FromHexError> {
+        if input.len() % 2 != 0 {
+            return Err(FromHexError::OddLength);
+        }
+        let input = strip_prefix(input);
+        if imp::check(input) {
+            Ok(())
+        } else {
+            Err(unsafe { invalid_hex_error(input) })
+        }
+    }
+
+    check_inner(input.as_ref())
+}
+
+/// Returns `true` if the input is a valid hex string.
+///
+/// Note that this does not check prefixes or length, but just the contents of the string.
+///
+/// # Examples
+///
+/// ```
+/// assert!(const_hex::check_raw("48656c6c6f20776f726c6421"));
+///
+/// // Odd length, but valid hex
+/// assert!(const_hex::check_raw("48656c6c6f20776f726c642"));
+///
+/// // Valid hex string, but the prefix is not valid
+/// assert!(!const_hex::check_raw("0x48656c6c6f20776f726c6421"));
+///
+/// assert!(!const_hex::check_raw("Hello world!"));
+/// ```
+#[inline]
+pub fn check_raw<T: AsRef<[u8]>>(input: T) -> bool {
+    imp::check(input.as_ref())
+}
+
 /// Decodes a hex string into raw bytes.
 ///
 /// Both, upper and lower case characters are valid in the input string and can
