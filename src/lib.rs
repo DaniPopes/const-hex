@@ -440,7 +440,7 @@ unsafe fn decode_real(input: &[u8], output: &mut [u8]) -> Result<(), FromHexErro
 mod generic {
     use super::*;
 
-    /// Set to `true` to use `check` + `decode_unchecked`. Otherwise uses `decode_checked`.
+    /// Set to `true` to use `check` + `decode_unchecked` for decoding. Otherwise uses `decode_checked`.
     ///
     /// This should be set to `false` if `check` is not specialized.
     #[allow(dead_code)]

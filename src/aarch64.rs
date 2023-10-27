@@ -4,7 +4,6 @@ use crate::generic;
 use core::arch::aarch64::*;
 
 pub(super) const USE_CHECK_FN: bool = false;
-
 const CHUNK_SIZE: usize = core::mem::size_of::<uint8x16_t>();
 
 /// Hex encoding function using aarch64 intrisics.

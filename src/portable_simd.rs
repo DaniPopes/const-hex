@@ -3,7 +3,6 @@ use core::simd::u8x16;
 use core::slice;
 
 pub(super) const USE_CHECK_FN: bool = false;
-
 const CHUNK_SIZE: usize = core::mem::size_of::<u8x16>();
 
 /// Hex encoding function using [`std::simd`][core::simd].
