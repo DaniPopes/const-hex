@@ -634,3 +634,97 @@ unsafe fn invalid_hex_error(input: &[u8]) -> FromHexError {
         index,
     }
 }
+
+#[allow(missing_docs, unused)]
+#[cfg(feature = "__fuzzing")]
+pub mod fuzzing {
+    use proptest::test_runner::TestCaseResult;
+    use proptest::{prop_assert, prop_assert_eq};
+    use std::io::Write;
+
+    pub fn fuzz(data: &[u8]) -> TestCaseResult {
+        self::encode(&data)?;
+        self::decode(&data)?;
+        Ok(())
+    }
+
+    pub fn encode(input: &[u8]) -> TestCaseResult {
+        test_buffer::<8, 16>(input)?;
+        test_buffer::<20, 40>(input)?;
+        test_buffer::<32, 64>(input)?;
+        test_buffer::<64, 128>(input)?;
+        test_buffer::<128, 256>(input)?;
+
+        let encoded = crate::encode(input);
+        let expected = mk_expected(input);
+        prop_assert_eq!(&encoded, &expected);
+
+        let decoded = crate::decode(&encoded).unwrap();
+        prop_assert_eq!(decoded, input);
+
+        Ok(())
+    }
+
+    pub fn decode(input: &[u8]) -> TestCaseResult {
+        if let Ok(decoded) = crate::decode(input) {
+            let prefix = if input.starts_with(b"0x") { 2 } else { 0 };
+            let input_len = (input.len() - prefix) / 2;
+            prop_assert_eq!(decoded.len(), input_len);
+        }
+
+        Ok(())
+    }
+
+    fn mk_expected(bytes: &[u8]) -> String {
+        let mut s = Vec::with_capacity(bytes.len() * 2);
+        for i in bytes {
+            write!(s, "{i:02x}").unwrap();
+        }
+        unsafe { String::from_utf8_unchecked(s) }
+    }
+
+    fn test_buffer<const N: usize, const LEN: usize>(bytes: &[u8]) -> TestCaseResult {
+        if let Ok(bytes) = <&[u8; N]>::try_from(bytes) {
+            let mut buffer = crate::Buffer::<N, false>::new();
+            let string = buffer.format(bytes).to_string();
+            prop_assert_eq!(string.len(), bytes.len() * 2);
+            prop_assert_eq!(string.as_bytes(), buffer.as_byte_array::<LEN>());
+            prop_assert_eq!(string.as_str(), buffer.as_str());
+            prop_assert_eq!(string.as_str(), mk_expected(bytes));
+
+            let mut buffer = crate::Buffer::<N, true>::new();
+            let prefixed = buffer.format(bytes).to_string();
+            prop_assert_eq!(prefixed.len(), 2 + bytes.len() * 2);
+            prop_assert_eq!(prefixed.as_str(), buffer.as_str());
+            prop_assert_eq!(prefixed, format!("0x{string}"));
+        }
+
+        Ok(())
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig {
+            cases: 1024,
+            ..Default::default()
+        })]
+
+        #[test]
+        fn fuzz_encode(s in ".+") {
+            encode(s.as_bytes())?;
+        }
+
+        #[test]
+        fn fuzz_check_true(s in "[0-9a-fA-F]+") {
+            prop_assert!(crate::check_raw(&s));
+            if s.len() % 2 == 0 {
+                prop_assert!(crate::check(&s).is_ok());
+            }
+        }
+
+        #[test]
+        fn fuzz_check_false(ref s in ".{16}[^0-9a-fA-F]+") {
+            prop_assert!(crate::check(&s).is_err());
+            prop_assert!(!crate::check_raw(&s));
+        }
+    }
+}
