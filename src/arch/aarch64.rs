@@ -1,13 +1,14 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use crate::generic;
+use super::generic;
+use crate::get_chars_table;
 use core::arch::aarch64::*;
 
-pub(super) const USE_CHECK_FN: bool = false;
+pub(crate) const USE_CHECK_FN: bool = false;
 const CHUNK_SIZE: usize = core::mem::size_of::<uint8x16_t>();
 
 #[inline]
-pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     if input.len() < CHUNK_SIZE || !cfg!(target_feature = "neon") || cfg!(miri) {
         return generic::encode::<UPPER>(input, output);
     }
@@ -15,9 +16,9 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 }
 
 #[target_feature(enable = "neon")]
-pub(super) unsafe fn _encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn _encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     // Load table.
-    let hex_table = vld1q_u8(super::get_chars_table::<UPPER>().as_ptr());
+    let hex_table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
 
     let input_chunks = input.chunks_exact(CHUNK_SIZE);
     let input_remainder = input_chunks.remainder();
@@ -48,6 +49,6 @@ pub(super) unsafe fn _encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     }
 }
 
-pub(super) use generic::check;
-pub(super) use generic::decode_checked;
-pub(super) use generic::decode_unchecked;
+pub(crate) use generic::check;
+pub(crate) use generic::decode_checked;
+pub(crate) use generic::decode_unchecked;

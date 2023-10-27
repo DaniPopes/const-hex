@@ -1,13 +1,14 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use crate::generic;
+use super::generic;
+use crate::get_chars_table;
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-pub(super) const USE_CHECK_FN: bool = true;
+pub(crate) const USE_CHECK_FN: bool = true;
 const CHUNK_SIZE: usize = core::mem::size_of::<__m128i>();
 
 const T_MASK: i32 = 65535;
@@ -16,7 +17,7 @@ cpufeatures::new!(cpuid_sse2, "sse2");
 cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 
 #[inline]
-pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
         return generic::encode::<UPPER>(input, output);
     }
@@ -26,7 +27,7 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 #[target_feature(enable = "ssse3")]
 unsafe fn _encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     // Load table and construct masks.
-    let hex_table = _mm_loadu_si128(super::get_chars_table::<UPPER>().as_ptr().cast());
+    let hex_table = _mm_loadu_si128(get_chars_table::<UPPER>().as_ptr().cast());
     let mask_lo = _mm_set1_epi8(0x0F);
     #[allow(clippy::cast_possible_wrap)]
     let mask_hi = _mm_set1_epi8(0xF0u8 as i8);
@@ -61,7 +62,7 @@ unsafe fn _encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 }
 
 #[inline]
-pub(super) fn check(input: &[u8]) -> bool {
+pub(crate) fn check(input: &[u8]) -> bool {
     if input.len() < CHUNK_SIZE || !cpuid_sse2::get() {
         return generic::check(input);
     }
@@ -105,5 +106,5 @@ unsafe fn _check(input: &[u8]) -> bool {
     generic::check(input_remainder)
 }
 
-pub(super) use generic::decode_checked;
-pub(super) use generic::decode_unchecked;
+pub(crate) use generic::decode_checked;
+pub(crate) use generic::decode_unchecked;

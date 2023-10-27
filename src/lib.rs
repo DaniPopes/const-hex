@@ -54,30 +54,14 @@ use alloc::{string::String, vec::Vec};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use cpufeatures as _;
 
-// The main implementation functions.
-cfg_if! {
-    if #[cfg(feature = "force-generic")] {
-        use generic as imp;
-    } else if #[cfg(feature = "portable-simd")] {
-        mod portable_simd;
-        use portable_simd as imp;
-    } else if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
-        mod x86;
-        use x86 as imp;
-    } else if #[cfg(target_arch = "aarch64")] {
-        mod aarch64;
-        use aarch64 as imp;
-    } else {
-        use generic as imp;
-    }
-}
+mod arch;
+use arch::imp;
 
 // If the `hex` feature is enabled, re-export the `hex` crate's traits.
 // Otherwise, use our own with the more optimized implementation.
 cfg_if! {
     if #[cfg(feature = "hex")] {
         pub use hex;
-
         #[doc(inline)]
         pub use hex::{FromHex, FromHexError, ToHex};
     } else {
@@ -485,90 +469,6 @@ unsafe fn decode_real(input: &[u8], output: &mut [u8]) -> Result<(), FromHexErro
     }
 
     Err(unsafe { invalid_hex_error(input) })
-}
-
-mod generic {
-    use super::*;
-
-    /// Set to `true` to use `check` + `decode_unchecked` for decoding. Otherwise uses `decode_checked`.
-    ///
-    /// This should be set to `false` if `check` is not specialized.
-    #[allow(dead_code)]
-    pub(super) const USE_CHECK_FN: bool = false;
-
-    /// Default encoding function.
-    ///
-    /// # Safety
-    ///
-    /// `output` must be a valid pointer to at least `2 * input.len()` bytes.
-    pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
-        for (i, byte) in input.iter().enumerate() {
-            let (high, low) = byte2hex::<UPPER>(*byte);
-            unsafe {
-                output.add(i * 2).write(high);
-                output.add(i * 2 + 1).write(low);
-            }
-        }
-    }
-
-    /// Default check function.
-    #[inline]
-    pub(super) fn check(input: &[u8]) -> bool {
-        input
-            .iter()
-            .all(|byte| HEX_DECODE_LUT[*byte as usize] != NIL)
-    }
-
-    /// Default unchecked decoding function.
-    ///
-    /// # Safety
-    ///
-    /// Assumes `output.len() == input.len() / 2`.
-    pub(super) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
-        unsafe { decode_maybe_check::<true>(input, output) }
-    }
-
-    /// Default unchecked decoding function.
-    ///
-    /// # Safety
-    ///
-    /// Assumes `output.len() == input.len() / 2` and that the input is valid hex.
-    pub(super) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
-        let r = unsafe { decode_maybe_check::<false>(input, output) };
-        debug_assert!(r);
-    }
-
-    /// Default decoding function. Checks input validity if `CHECK` is `true`, otherwise assumes it.
-    ///
-    /// # Safety
-    ///
-    /// Assumes `output.len() == input.len() / 2` and that the input is valid hex if `CHECK` is `true`.
-    #[inline(always)]
-    unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], output: &mut [u8]) -> bool {
-        macro_rules! next {
-            ($var:ident, $i:expr) => {
-                let hex = unsafe { *input.get_unchecked($i) };
-                let $var = HEX_DECODE_LUT[hex as usize];
-                if CHECK {
-                    if $var == NIL {
-                        return false;
-                    }
-                } else {
-                    debug_assert_ne!($var, NIL);
-                }
-            };
-        }
-
-        debug_assert_eq!(output.len(), input.len() / 2);
-        let mut i = 0;
-        while i < output.len() {
-            next!(high, i * 2);
-            next!(low, i * 2 + 1);
-            output[i] = high << 4 | low;
-            i += 1;
-        }
-        true
-    }
 }
 
 #[inline]

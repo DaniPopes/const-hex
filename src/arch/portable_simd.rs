@@ -1,11 +1,12 @@
-use crate::generic;
+use super::generic;
+use crate::get_chars_table;
 use core::simd::u8x16;
 use core::slice;
 
-pub(super) const USE_CHECK_FN: bool = false;
+pub(crate) const USE_CHECK_FN: bool = false;
 const CHUNK_SIZE: usize = core::mem::size_of::<u8x16>();
 
-pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     let mut i = 0;
     let (prefix, chunks, suffix) = input.as_simd::<CHUNK_SIZE>();
 
@@ -13,7 +14,7 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     unsafe { generic::encode::<UPPER>(prefix, output) };
     i += prefix.len() * 2;
 
-    let hex_table = u8x16::from_array(*crate::get_chars_table::<UPPER>());
+    let hex_table = u8x16::from_array(*get_chars_table::<UPPER>());
     for &chunk in chunks {
         // Load input bytes and mask to nibbles.
         let mut lo = chunk & u8x16::splat(15);
@@ -40,6 +41,6 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     unsafe { generic::encode::<UPPER>(suffix, output.add(i)) };
 }
 
-pub(super) use generic::check;
-pub(super) use generic::decode_checked;
-pub(super) use generic::decode_unchecked;
+pub(crate) use generic::check;
+pub(crate) use generic::decode_checked;
+pub(crate) use generic::decode_unchecked;
