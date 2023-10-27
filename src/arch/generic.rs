@@ -23,10 +23,14 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 
 /// Default check function.
 #[inline]
-pub(crate) fn check(input: &[u8]) -> bool {
-    input
-        .iter()
-        .all(|byte| HEX_DECODE_LUT[*byte as usize] != NIL)
+pub(crate) const fn check(mut input: &[u8]) -> bool {
+    while let [byte, rest @ ..] = input {
+        if HEX_DECODE_LUT[*byte as usize] == NIL {
+            return false;
+        }
+        input = rest;
+    }
+    true
 }
 
 /// Default unchecked decoding function.

@@ -97,12 +97,16 @@ fn encode_upper_prefixed() {
 fn decode_lower() {
     let decoded = const_hex::decode(ALL_LOWER).unwrap();
     assert_eq!(decoded, ALL);
+    let decoded = const_hex::decode_to_array(ALL_LOWER).unwrap();
+    assert_eq!(decoded, ALL);
 }
 
 #[test]
 #[cfg(feature = "alloc")]
 fn decode_upper() {
     let decoded = const_hex::decode(ALL_UPPER).unwrap();
+    assert_eq!(decoded, ALL);
+    let decoded = const_hex::decode_to_array(ALL_UPPER).unwrap();
     assert_eq!(decoded, ALL);
 }
 

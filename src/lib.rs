@@ -55,7 +55,9 @@ use alloc::{string::String, vec::Vec};
 use cpufeatures as _;
 
 mod arch;
-use arch::imp;
+use arch::{generic, imp};
+
+mod impl_core;
 
 // If the `hex` feature is enabled, re-export the `hex` crate's traits.
 // Otherwise, use our own with the more optimized implementation.
@@ -286,6 +288,60 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 
 /// Returns `true` if the input is a valid hex string and can be decoded successfully.
 ///
+/// Prefer using [`check`] instead when possible (at runtime), as it is likely to be faster.
+///
+/// # Examples
+///
+/// ```
+/// const _: () = {
+///     assert!(const_hex::const_check(b"48656c6c6f20776f726c6421").is_ok());
+///     assert!(const_hex::const_check(b"0x48656c6c6f20776f726c6421").is_ok());
+///
+///     assert!(const_hex::const_check(b"48656c6c6f20776f726c642").is_err());
+///     assert!(const_hex::const_check(b"Hello world!").is_err());
+/// };
+/// ```
+#[inline]
+pub const fn const_check(input: &[u8]) -> Result<(), FromHexError> {
+    if input.len() % 2 != 0 {
+        return Err(FromHexError::OddLength);
+    }
+    let input = strip_prefix(input);
+    if const_check_raw(input) {
+        Ok(())
+    } else {
+        Err(unsafe { invalid_hex_error(input) })
+    }
+}
+
+/// Returns `true` if the input is a valid hex string.
+///
+/// Note that this does not check prefixes or length, but just the contents of the string.
+///
+/// Prefer using [`check_raw`] instead when possible (at runtime), as it is likely to be faster.
+///
+/// # Examples
+///
+/// ```
+/// const _: () = {
+///     assert!(const_hex::const_check_raw(b"48656c6c6f20776f726c6421"));
+///
+///     // Odd length, but valid hex
+///     assert!(const_hex::const_check_raw(b"48656c6c6f20776f726c642"));
+///
+///     // Valid hex string, but the prefix is not valid
+///     assert!(!const_hex::const_check_raw(b"0x48656c6c6f20776f726c6421"));
+///
+///     assert!(!const_hex::const_check_raw(b"Hello world!"));
+/// };
+/// ```
+#[inline]
+pub const fn const_check_raw(input: &[u8]) -> bool {
+    generic::check(input)
+}
+
+/// Returns `true` if the input is a valid hex string and can be decoded successfully.
+///
 /// # Examples
 ///
 /// ```
@@ -297,6 +353,7 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// ```
 #[inline]
 pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
+    #[allow(clippy::missing_const_for_fn)]
     fn check_inner(input: &[u8]) -> Result<(), FromHexError> {
         if input.len() % 2 != 0 {
             return Err(FromHexError::OddLength);
@@ -332,6 +389,70 @@ pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
 #[inline]
 pub fn check_raw<T: AsRef<[u8]>>(input: T) -> bool {
     imp::check(input.as_ref())
+}
+
+/// Decode a hex string into a fixed-length byte-array.
+///
+/// Both, upper and lower case characters are valid in the input string and can
+/// even be mixed (e.g. `f9b4ca`, `F9B4CA` and `f9B4Ca` are all valid strings).
+///
+/// Strips the `0x` prefix if present.
+///
+/// Prefer using [`decode_to_array`] instead when possible (at runtime), as it is likely to be faster.
+///
+/// # Errors
+///
+/// This function returns an error if the input is not an even number of
+/// characters long or contains invalid hex characters, or if the input is not
+/// exactly `N * 2` bytes long.
+///
+/// # Example
+///
+/// ```
+/// const _: () = {
+///     let bytes = const_hex::const_decode_to_array(b"6b697769");
+///     assert!(matches!(bytes.as_ref(), Ok(b"kiwi")));
+///
+///     let bytes = const_hex::const_decode_to_array(b"0x6b697769");
+///     assert!(matches!(bytes.as_ref(), Ok(b"kiwi")));
+/// };
+/// ```
+#[inline]
+pub const fn const_decode_to_array<const N: usize>(input: &[u8]) -> Result<[u8; N], FromHexError> {
+    if input.len() % 2 != 0 {
+        return Err(FromHexError::OddLength);
+    }
+    let input = strip_prefix(input);
+    if input.len() != N * 2 {
+        return Err(FromHexError::InvalidStringLength);
+    }
+    match const_decode_to_array_impl(input) {
+        Some(output) => Ok(output),
+        None => Err(unsafe { invalid_hex_error(input) }),
+    }
+}
+
+const fn const_decode_to_array_impl<const N: usize>(input: &[u8]) -> Option<[u8; N]> {
+    macro_rules! next {
+        ($var:ident, $i:expr) => {
+            let hex = unsafe { *input.as_ptr().add($i) };
+            let $var = HEX_DECODE_LUT[hex as usize];
+            if $var == NIL {
+                return None;
+            }
+        };
+    }
+
+    let mut output = [0; N];
+    debug_assert!(input.len() == N * 2);
+    let mut i = 0;
+    while i < output.len() {
+        next!(high, i * 2);
+        next!(low, i * 2 + 1);
+        output[i] = high << 4 | low;
+        i += 1;
+    }
+    Some(output)
 }
 
 /// Decodes a hex string into raw bytes.
@@ -411,19 +532,44 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
 /// ```
 #[inline]
 pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
-    fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
-        if unlikely(input.len() % 2 != 0) {
-            return Err(FromHexError::OddLength);
-        }
-        let input = strip_prefix(input);
-        if unlikely(output.len() != input.len() / 2) {
-            return Err(FromHexError::InvalidStringLength);
-        }
-        // SAFETY: Lengths are checked above.
-        unsafe { decode_real(input, output) }
+    decode_to_slice_inner(input.as_ref(), output)
+}
+
+/// Decode a hex string into a fixed-length byte-array.
+///
+/// Both, upper and lower case characters are valid in the input string and can
+/// even be mixed (e.g. `f9b4ca`, `F9B4CA` and `f9B4Ca` are all valid strings).
+///
+/// Strips the `0x` prefix if present.
+///
+/// # Errors
+///
+/// This function returns an error if the input is not an even number of
+/// characters long or contains invalid hex characters, or if the input is not
+/// exactly `N / 2` bytes long.
+///
+/// # Example
+///
+/// ```
+/// let bytes = const_hex::decode_to_array(b"6b697769").unwrap();
+/// assert_eq!(&bytes, b"kiwi");
+///
+/// let bytes = const_hex::decode_to_array(b"0x6b697769").unwrap();
+/// assert_eq!(&bytes, b"kiwi");
+/// ```
+#[inline]
+pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; N], FromHexError> {
+    fn decode_to_array_inner<const N: usize>(input: &[u8]) -> Result<[u8; N], FromHexError> {
+        let mut output = impl_core::uninit_array();
+        // SAFETY: The entire array is never read from.
+        let output_slice = unsafe { impl_core::slice_assume_init_mut(&mut output) };
+        decode_to_slice_inner(input, output_slice).map(|()| unsafe {
+            // SAFETY: All elements are initialized.
+            impl_core::array_assume_init(output)
+        })
     }
 
-    decode_to_slice_inner(input.as_ref(), output)
+    decode_to_array_inner(input.as_ref())
 }
 
 #[cfg(feature = "alloc")]
@@ -454,6 +600,19 @@ fn encode_to_slice_inner<const UPPER: bool>(
     Ok(())
 }
 
+fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+    if unlikely(input.len() % 2 != 0) {
+        return Err(FromHexError::OddLength);
+    }
+    let input = strip_prefix(input);
+    if unlikely(output.len() != input.len() / 2) {
+        return Err(FromHexError::InvalidStringLength);
+    }
+    // SAFETY: Lengths are checked above.
+    unsafe { decode_real(input, output) }
+}
+
+#[inline]
 unsafe fn decode_real(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
     if imp::USE_CHECK_FN {
         // check then decode
@@ -480,11 +639,44 @@ const fn byte2hex<const UPPER: bool>(byte: u8) -> (u8, u8) {
 }
 
 #[inline]
-fn strip_prefix(bytes: &[u8]) -> &[u8] {
-    if bytes.starts_with(b"0x") {
-        unsafe { bytes.get_unchecked(2..) }
-    } else {
-        bytes
+const fn strip_prefix(bytes: &[u8]) -> &[u8] {
+    match bytes {
+        [b'0', b'x', rest @ ..] => rest,
+        _ => bytes,
+    }
+}
+
+/// Creates an invalid hex error from the input.
+///
+/// # Safety
+///
+/// Assumes `input` contains at least one invalid character.
+#[cold]
+#[cfg_attr(debug_assertions, track_caller)]
+const unsafe fn invalid_hex_error(mut input: &[u8]) -> FromHexError {
+    let mut index = None;
+    while let [byte, rest @ ..] = input {
+        if HEX_DECODE_LUT[*byte as usize] == NIL {
+            index = Some(input.len() - rest.len());
+            break;
+        }
+        input = rest;
+    }
+
+    let index = match index {
+        Some(index) => index,
+        None => {
+            if cfg!(debug_assertions) {
+                panic!("input was valid but `check` failed")
+            } else {
+                core::hint::unreachable_unchecked()
+            }
+        }
+    };
+
+    FromHexError::InvalidHexCharacter {
+        c: input[index] as char,
+        index,
     }
 }
 
@@ -516,28 +708,15 @@ const fn make_decode_lut() -> [u8; 256] {
     lut
 }
 
-/// Creates an invalid hex error from the input.
-///
-/// # Safety
-///
-/// Assumes `input` contains at least one invalid character.
-#[cold]
-#[cfg_attr(debug_assertions, track_caller)]
-unsafe fn invalid_hex_error(input: &[u8]) -> FromHexError {
-    let index = input
-        .iter()
-        .position(|byte| HEX_DECODE_LUT[*byte as usize] == NIL);
-    debug_assert!(index.is_some(), "input was valid but `check` failed");
-    let index = index.unwrap_unchecked();
-    FromHexError::InvalidHexCharacter {
-        c: input[index] as char,
-        index,
-    }
-}
-
-#[allow(missing_docs, unused)]
+#[allow(
+    missing_docs,
+    unused,
+    clippy::all,
+    clippy::missing_inline_in_public_items
+)]
 #[cfg(all(feature = "__fuzzing", not(miri)))]
 pub mod fuzzing {
+    use super::*;
     use proptest::test_runner::TestCaseResult;
     use proptest::{prop_assert, prop_assert_eq};
     use std::io::Write;
@@ -567,8 +746,7 @@ pub mod fuzzing {
 
     pub fn decode(input: &[u8]) -> TestCaseResult {
         if let Ok(decoded) = crate::decode(input) {
-            let prefix = if input.starts_with(b"0x") { 2 } else { 0 };
-            let input_len = (input.len() - prefix) / 2;
+            let input_len = strip_prefix(input).len() / 2;
             prop_assert_eq!(decoded.len(), input_len);
         }
 
@@ -585,18 +763,23 @@ pub mod fuzzing {
 
     fn test_buffer<const N: usize, const LEN: usize>(bytes: &[u8]) -> TestCaseResult {
         if let Ok(bytes) = <&[u8; N]>::try_from(bytes) {
-            let mut buffer = crate::Buffer::<N, false>::new();
+            let mut buffer = Buffer::<N, false>::new();
             let string = buffer.format(bytes).to_string();
             prop_assert_eq!(string.len(), bytes.len() * 2);
             prop_assert_eq!(string.as_bytes(), buffer.as_byte_array::<LEN>());
             prop_assert_eq!(string.as_str(), buffer.as_str());
             prop_assert_eq!(string.as_str(), mk_expected(bytes));
 
-            let mut buffer = crate::Buffer::<N, true>::new();
+            let mut buffer = Buffer::<N, true>::new();
             let prefixed = buffer.format(bytes).to_string();
             prop_assert_eq!(prefixed.len(), 2 + bytes.len() * 2);
             prop_assert_eq!(prefixed.as_str(), buffer.as_str());
-            prop_assert_eq!(prefixed, format!("0x{string}"));
+            prop_assert_eq!(prefixed.as_str(), format!("0x{string}"));
+
+            prop_assert_eq!(decode_to_array(&string), Ok(*bytes));
+            prop_assert_eq!(decode_to_array(&prefixed), Ok(*bytes));
+            prop_assert_eq!(const_decode_to_array(string.as_bytes()), Ok(*bytes));
+            prop_assert_eq!(const_decode_to_array(prefixed.as_bytes()), Ok(*bytes));
         }
 
         Ok(())
@@ -615,16 +798,21 @@ pub mod fuzzing {
 
         #[test]
         fn fuzz_check_true(s in "[0-9a-fA-F]+") {
-            prop_assert!(crate::check_raw(&s));
+            let s = s.as_bytes();
+            prop_assert!(crate::check_raw(s));
+            prop_assert!(crate::const_check_raw(s));
             if s.len() % 2 == 0 {
-                prop_assert!(crate::check(&s).is_ok());
+                prop_assert!(crate::check(s).is_ok());
+                prop_assert!(crate::const_check(s).is_ok());
             }
         }
 
         #[test]
-        fn fuzz_check_false(ref s in ".{16}[^0-9a-fA-F]+") {
-            prop_assert!(crate::check(&s).is_err());
-            prop_assert!(!crate::check_raw(&s));
+        fn fuzz_check_false(s in ".{16}[0-9a-fA-F]+") {
+            let s = s.as_bytes();
+            prop_assert!(crate::check(s).is_err());
+            prop_assert!(!crate::check_raw(s));
+            prop_assert!(!crate::const_check_raw(s));
         }
     }
 }
