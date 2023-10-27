@@ -65,6 +65,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@miri
         with:
           target: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
       - run: cargo miri setup --target ${{ matrix.target }} ${{ matrix.flags }}
       - run: cargo miri test --target ${{ matrix.target }} ${{ matrix.flags }}
 
@@ -76,6 +77,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@nightly
       - uses: dtolnay/install@cargo-fuzz
+      - uses: Swatinem/rust-cache@v2
       - run: cargo fuzz check
 
   feature-checks:
@@ -86,6 +88,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@nightly
       - uses: taiki-e/install-action@cargo-hack
+      - uses: Swatinem/rust-cache@v2
       - name: cargo hack
         run: cargo hack check --feature-powerset --depth 2 --all-targets
 
@@ -96,6 +99,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets
 
   docs:
@@ -107,6 +111,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-docs
+      - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --all-features --no-deps --document-private-items
         env:
           RUSTDOCFLAGS: "--cfg docsrs -D warnings"
