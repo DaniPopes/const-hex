@@ -29,7 +29,7 @@
     clippy::all,
     rustdoc::all
 )]
-#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+#![cfg_attr(not(any(test, feature = "__fuzzing")), warn(unused_crate_dependencies))]
 #![deny(unused_must_use, rust_2018_idioms)]
 #![allow(
     clippy::cast_lossless,
