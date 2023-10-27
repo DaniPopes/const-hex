@@ -2,6 +2,7 @@ use crate::generic;
 use core::simd::u8x16;
 use core::slice;
 
+pub(super) const USE_CHECK_FN: bool = false;
 const CHUNK_SIZE: usize = core::mem::size_of::<u8x16>();
 
 /// Hex encoding function using [`std::simd`][core::simd].
@@ -44,4 +45,6 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     unsafe { generic::encode::<UPPER>(suffix, output.add(i)) };
 }
 
-pub(super) use generic::decode;
+pub(super) use generic::check;
+pub(super) use generic::decode_checked;
+pub(super) use generic::decode_unchecked;

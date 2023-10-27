@@ -9,7 +9,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-const-hex = { path = ".." }
+const-hex = { path = "..", features = ["__fuzzing"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]

@@ -21,20 +21,21 @@ rustdoc-args = ["--cfg", "docsrs"]
 cfg-if = "1"
 hex = { version = "~0.4.2", optional = true, default-features = false }
 serde = { version = "1.0", optional = true, default-features = false }
+proptest = { version = "1.3.1", default-features = false, optional = true }
 
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
 cpufeatures = "0.2"
 
 [dev-dependencies]
-hex = "~0.4.2"
+hex = { version = "~0.4.2", default-features = false }
 hex-literal = "0.4"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [features]
 default = ["std"]
-std = ["hex?/std", "serde?/std", "alloc"]
-alloc = ["hex?/alloc", "serde?/alloc"]
+std = ["hex?/std", "serde?/std", "proptest?/std", "alloc"]
+alloc = ["hex?/alloc", "serde?/alloc", "proptest?/alloc"]
 
 # Serde support. Use with `#[serde(with = "const_hex")]`
 serde = ["hex?/serde", "dep:serde"]
@@ -51,5 +52,8 @@ force-generic = []
 # the specialized implementations.
 portable-simd = []
 
-# Nightly features for better performance.
+# Enables nightly-only features for better performance.
 nightly = []
+
+# Internal features.
+__fuzzing = ["dep:proptest", "std"]

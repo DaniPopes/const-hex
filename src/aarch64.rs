@@ -3,6 +3,7 @@
 use crate::generic;
 use core::arch::aarch64::*;
 
+pub(super) const USE_CHECK_FN: bool = false;
 const CHUNK_SIZE: usize = core::mem::size_of::<uint8x16_t>();
 
 /// Hex encoding function using aarch64 intrisics.
@@ -49,4 +50,6 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     }
 }
 
-pub(super) use generic::decode;
+pub(super) use generic::check;
+pub(super) use generic::decode_checked;
+pub(super) use generic::decode_unchecked;
