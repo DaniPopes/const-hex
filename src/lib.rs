@@ -715,6 +715,7 @@ const fn make_decode_lut() -> [u8; 256] {
     clippy::missing_inline_in_public_items
 )]
 #[cfg(all(feature = "__fuzzing", not(miri)))]
+#[doc(hidden)]
 pub mod fuzzing {
     use super::*;
     use proptest::test_runner::TestCaseResult;
