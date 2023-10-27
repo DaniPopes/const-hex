@@ -12,11 +12,11 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     if input.len() < CHUNK_SIZE || !cfg!(target_feature = "neon") || cfg!(miri) {
         return generic::encode::<UPPER>(input, output);
     }
-    _encode::<UPPER>(input, output);
+    encode_neon::<UPPER>(input, output);
 }
 
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn _encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: *mut u8) {
     // Load table.
     let hex_table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
 

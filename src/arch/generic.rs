@@ -64,7 +64,7 @@ unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], output: &mut [u8])
                     return false;
                 }
             } else {
-                debug_assert_ne!($var, NIL);
+                debug_assert_ne!($var, NIL, "invalid hex input");
             }
         };
     }
