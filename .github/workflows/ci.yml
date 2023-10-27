@@ -58,9 +58,6 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
         flags: [--no-default-features, "", --all-features, --features force-generic]
-        exclude:
-          # miri doesn't implement neon intrinsics.
-          - target: aarch64-unknown-linux-gnu
     env:
       MIRIFLAGS: -Zmiri-strict-provenance
     steps:

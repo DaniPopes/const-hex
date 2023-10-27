@@ -15,11 +15,6 @@ const T_MASK: i32 = 65535;
 cpufeatures::new!(cpuid_sse2, "sse2");
 cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
 
-/// Hex encoding function using x86 intrisics.
-///
-/// # Safety
-///
-/// `output` must be a valid pointer to at least `2 * input.len()` bytes.
 #[inline]
 pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     if input.len() < CHUNK_SIZE || !cpuid_ssse3::get() {
