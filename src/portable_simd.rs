@@ -5,11 +5,6 @@ use core::slice;
 pub(super) const USE_CHECK_FN: bool = false;
 const CHUNK_SIZE: usize = core::mem::size_of::<u8x16>();
 
-/// Hex encoding function using [`std::simd`][core::simd].
-///
-/// # Safety
-///
-/// `output` must be a valid pointer to at least `2 * input.len()` bytes.
 pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     let mut i = 0;
     let (prefix, chunks, suffix) = input.as_simd::<CHUNK_SIZE>();

@@ -6,18 +6,16 @@ use core::arch::aarch64::*;
 pub(super) const USE_CHECK_FN: bool = false;
 const CHUNK_SIZE: usize = core::mem::size_of::<uint8x16_t>();
 
-/// Hex encoding function using aarch64 intrisics.
-///
-/// # Safety
-///
-/// `output` must be a valid pointer to at least `2 * input.len()` bytes.
-// SAFETY: this is only compiled when the target feature is enabled.
-#[target_feature(enable = "neon")]
+#[inline]
 pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
-    if input.len() < CHUNK_SIZE {
+    if input.len() < CHUNK_SIZE || !cfg!(target_feature = "neon") || cfg!(miri) {
         return generic::encode::<UPPER>(input, output);
     }
+    _encode::<UPPER>(input, output);
+}
 
+#[target_feature(enable = "neon")]
+pub(super) unsafe fn _encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     // Load table.
     let hex_table = vld1q_u8(super::get_chars_table::<UPPER>().as_ptr());
 
