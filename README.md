@@ -19,68 +19,89 @@ _Version requirement: rustc 1.64+_
 
 ## Performance
 
-This crate is 5 to 20 times faster than [`hex`] in encoding and decoding, and
-30+ times faster than `libstd` in formatting.
+This crate's performance is comparable with [`faster-hex`], but the latter only
+provides specialized implementations for `x86`/`x86-64`.
 
-The following benchmarks were ran on an AMD Ryzen 9 5900X, compiled with
-`rustc 1.74.0-nightly (203c57dbe 2023-09-17)` on `x86_64-unknown-linux-gnu`.
+This crate is 10 to 50 times faster than [`hex`] in encoding and decoding, and
+100+ times faster than `libstd` in formatting.
 
-You can run these benchmarks with `cargo bench --features std` on a
-nightly compiler.
+The following benchmarks were ran on an AMD Ryzen 9 5900X (AVX2), compiled with
+`rustc 1.75.0-nightly (aa1a71e9e 2023-10-26)` on `x86_64-unknown-linux-gnu`.
+
+You can run these benchmarks with `cargo bench --features std` on a nightly
+compiler.
 
 ```log
-test decode::const_hex::bench1_32             ... bench:          23 ns/iter (+/- 1)
-test decode::const_hex::bench2_256            ... bench:          98 ns/iter (+/- 4)
-test decode::const_hex::bench3_2048           ... bench:         550 ns/iter (+/- 117)
-test decode::const_hex::bench4_16384          ... bench:       4,104 ns/iter (+/- 35)
-test decode::hex::bench1_32                   ... bench:         104 ns/iter (+/- 6)
-test decode::hex::bench2_256                  ... bench:         828 ns/iter (+/- 14)
-test decode::hex::bench3_2048                 ... bench:       6,229 ns/iter (+/- 113)
-test decode::hex::bench4_16384                ... bench:      70,582 ns/iter (+/- 1,774)
+test decode::const_hex::bench1_32              ... bench:          19 ns/iter (+/- 0)
+test decode::const_hex::bench2_256             ... bench:          28 ns/iter (+/- 1)
+test decode::const_hex::bench3_2048            ... bench:         133 ns/iter (+/- 4)
+test decode::const_hex::bench4_16384           ... bench:         948 ns/iter (+/- 11)
+test decode::faster_hex::bench1_32             ... bench:          23 ns/iter (+/- 0)
+test decode::faster_hex::bench2_256            ... bench:          46 ns/iter (+/- 0)
+test decode::faster_hex::bench3_2048           ... bench:         148 ns/iter (+/- 7)
+test decode::faster_hex::bench4_16384          ... bench:       1,063 ns/iter (+/- 22)
+test decode::hex::bench1_32                    ... bench:          63 ns/iter (+/- 11)
+test decode::hex::bench2_256                   ... bench:         440 ns/iter (+/- 12)
+test decode::hex::bench3_2048                  ... bench:       3,346 ns/iter (+/- 574)
+test decode::hex::bench4_16384                 ... bench:      43,589 ns/iter (+/- 2,809)
 
-test decode_to_slice::const_hex::bench1_32    ... bench:          12 ns/iter (+/- 1)
-test decode_to_slice::const_hex::bench2_256   ... bench:          89 ns/iter (+/- 0)
-test decode_to_slice::const_hex::bench3_2048  ... bench:         678 ns/iter (+/- 15)
-test decode_to_slice::const_hex::bench4_16384 ... bench:       5,348 ns/iter (+/- 20)
-test decode_to_slice::hex::bench1_32          ... bench:          57 ns/iter (+/- 0)
-test decode_to_slice::hex::bench2_256         ... bench:         515 ns/iter (+/- 43)
-test decode_to_slice::hex::bench3_2048        ... bench:       4,021 ns/iter (+/- 173)
-test decode_to_slice::hex::bench4_16384       ... bench:      54,224 ns/iter (+/- 2,023)
+test decode_to_slice::const_hex::bench1_32     ... bench:          11 ns/iter (+/- 1)
+test decode_to_slice::const_hex::bench2_256    ... bench:          18 ns/iter (+/- 2)
+test decode_to_slice::const_hex::bench3_2048   ... bench:         123 ns/iter (+/- 5)
+test decode_to_slice::const_hex::bench4_16384  ... bench:         940 ns/iter (+/- 41)
+test decode_to_slice::faster_hex::bench1_32    ... bench:          11 ns/iter (+/- 0)
+test decode_to_slice::faster_hex::bench2_256   ... bench:          19 ns/iter (+/- 0)
+test decode_to_slice::faster_hex::bench3_2048  ... bench:         130 ns/iter (+/- 7)
+test decode_to_slice::faster_hex::bench4_16384 ... bench:       1,011 ns/iter (+/- 33)
+test decode_to_slice::hex::bench1_32           ... bench:          22 ns/iter (+/- 2)
+test decode_to_slice::hex::bench2_256          ... bench:         171 ns/iter (+/- 8)
+test decode_to_slice::hex::bench3_2048         ... bench:       1,650 ns/iter (+/- 221)
+test decode_to_slice::hex::bench4_16384        ... bench:      15,614 ns/iter (+/- 736)
 
-test encode::const_hex::bench1_32             ... bench:          12 ns/iter (+/- 0)
-test encode::const_hex::bench2_256            ... bench:          25 ns/iter (+/- 1)
-test encode::const_hex::bench3_2048           ... bench:         129 ns/iter (+/- 1)
-test encode::const_hex::bench4_16384          ... bench:         854 ns/iter (+/- 8)
-test encode::hex::bench1_32                   ... bench:         134 ns/iter (+/- 1)
-test encode::hex::bench2_256                  ... bench:         925 ns/iter (+/- 5)
-test encode::hex::bench3_2048                 ... bench:       7,349 ns/iter (+/- 50)
-test encode::hex::bench4_16384                ... bench:      58,211 ns/iter (+/- 2,474)
+test encode::const_hex::bench1_32              ... bench:          13 ns/iter (+/- 1)
+test encode::const_hex::bench2_256             ... bench:          26 ns/iter (+/- 0)
+test encode::const_hex::bench3_2048            ... bench:         136 ns/iter (+/- 1)
+test encode::const_hex::bench4_16384           ... bench:         863 ns/iter (+/- 39)
+test encode::faster_hex::bench1_32             ... bench:          19 ns/iter (+/- 0)
+test encode::faster_hex::bench2_256            ... bench:          34 ns/iter (+/- 0)
+test encode::faster_hex::bench3_2048           ... bench:         135 ns/iter (+/- 1)
+test encode::faster_hex::bench4_16384          ... bench:         825 ns/iter (+/- 8)
+test encode::hex::bench1_32                    ... bench:         148 ns/iter (+/- 7)
+test encode::hex::bench2_256                   ... bench:       1,037 ns/iter (+/- 17)
+test encode::hex::bench3_2048                  ... bench:       8,186 ns/iter (+/- 295)
+test encode::hex::bench4_16384                 ... bench:      65,257 ns/iter (+/- 15,832)
 
-test encode_to_slice::const_hex::bench1_32    ... bench:           1 ns/iter (+/- 0)
-test encode_to_slice::const_hex::bench2_256   ... bench:           8 ns/iter (+/- 0)
-test encode_to_slice::const_hex::bench3_2048  ... bench:          70 ns/iter (+/- 0)
-test encode_to_slice::const_hex::bench4_16384 ... bench:         586 ns/iter (+/- 10)
-test encode_to_slice::hex::bench1_32          ... bench:          14 ns/iter (+/- 0)
-test encode_to_slice::hex::bench2_256         ... bench:         130 ns/iter (+/- 3)
-test encode_to_slice::hex::bench3_2048        ... bench:         794 ns/iter (+/- 1)
-test encode_to_slice::hex::bench4_16384       ... bench:       6,401 ns/iter (+/- 9)
+test encode_to_slice::const_hex::bench1_32     ... bench:           1 ns/iter (+/- 0)
+test encode_to_slice::const_hex::bench2_256    ... bench:           8 ns/iter (+/- 0)
+test encode_to_slice::const_hex::bench3_2048   ... bench:          79 ns/iter (+/- 1)
+test encode_to_slice::const_hex::bench4_16384  ... bench:         577 ns/iter (+/- 11)
+test encode_to_slice::faster_hex::bench1_32    ... bench:           5 ns/iter (+/- 0)
+test encode_to_slice::faster_hex::bench2_256   ... bench:           9 ns/iter (+/- 0)
+test encode_to_slice::faster_hex::bench3_2048  ... bench:          68 ns/iter (+/- 3)
+test encode_to_slice::faster_hex::bench4_16384 ... bench:         533 ns/iter (+/- 11)
+test encode_to_slice::hex::bench1_32           ... bench:          10 ns/iter (+/- 0)
+test encode_to_slice::hex::bench2_256          ... bench:         129 ns/iter (+/- 10)
+test encode_to_slice::hex::bench3_2048         ... bench:         844 ns/iter (+/- 75)
+test encode_to_slice::hex::bench4_16384        ... bench:       6,711 ns/iter (+/- 461)
 
-test format::const_hex::bench1_32             ... bench:          11 ns/iter (+/- 0)
-test format::const_hex::bench2_256            ... bench:          27 ns/iter (+/- 0)
-test format::const_hex::bench3_2048           ... bench:         173 ns/iter (+/- 0)
-test format::const_hex::bench4_16384          ... bench:       1,409 ns/iter (+/- 7)
-test format::std::bench1_32                   ... bench:         510 ns/iter (+/- 5)
-test format::std::bench2_256                  ... bench:       3,836 ns/iter (+/- 347)
-test format::std::bench3_2048                 ... bench:      30,298 ns/iter (+/- 253)
-test format::std::bench4_16384                ... bench:     247,471 ns/iter (+/- 7,873)
+test format::const_hex::bench1_32              ... bench:          10 ns/iter (+/- 0)
+test format::const_hex::bench2_256             ... bench:          40 ns/iter (+/- 0)
+test format::const_hex::bench3_2048            ... bench:         176 ns/iter (+/- 1)
+test format::const_hex::bench4_16384           ... bench:       1,399 ns/iter (+/- 12)
+test format::std::bench1_32                    ... bench:         503 ns/iter (+/- 4)
+test format::std::bench2_256                   ... bench:       3,915 ns/iter (+/- 29)
+test format::std::bench3_2048                  ... bench:      30,012 ns/iter (+/- 396)
+test format::std::bench4_16384                 ... bench:     242,046 ns/iter (+/- 1,357)
 ```
 
 ## Acknowledgements
 
 - [`hex`] for the initial encoding/decoding implementations
+- [`faster-hex`] for the `x86`/`x86-64` check and decode implementations
 - [dtolnay]/[itoa] for the initial crate/library API layout
 
 [`hex`]: https://crates.io/crates/hex
+[`faster-hex`]: https://crates.io/crates/faster-hex
 [dtolnay]: https://github.com/dtolnay
 [itoa]: https://github.com/dtolnay/itoa
 

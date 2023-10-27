@@ -71,6 +71,7 @@ pub(crate) fn check(input: &[u8]) -> bool {
     unsafe { check_sse2(input) }
 }
 
+/// Modified from [`faster-hex`](https://github.com/nervosnetwork/faster-hex/blob/856aba7b141a5fe16113fae110d535065882f25a/src/decode.rs).
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
     let ascii_zero = _mm_set1_epi8((b'0' - 1) as i8);
@@ -116,6 +117,7 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
     decode_avx2(input, output);
 }
 
+/// Modified from [`faster-hex`](https://github.com/nervosnetwork/faster-hex/blob/856aba7b141a5fe16113fae110d535065882f25a/src/decode.rs).
 #[inline(never)]
 #[target_feature(enable = "avx2")]
 unsafe fn decode_avx2(mut input: &[u8], mut output: &mut [u8]) {

@@ -46,6 +46,22 @@ macro_rules! benches {
                 )*
             }
 
+            mod faster_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            const L: usize = $dec.len() / 2;
+                            let mut buf = vec![0; L];
+                            ::faster_hex::hex_decode(black_box($dec.as_bytes()), black_box(&mut buf)).unwrap();
+                            unsafe { String::from_utf8_unchecked(buf) }
+                        });
+                    }
+                )*
+            }
+
             mod hex {
                 use super::*;
 
@@ -70,11 +86,24 @@ macro_rules! benches {
                     #[bench]
                     fn $name(b: &mut Bencher) {
                         let buf = &mut [0; $dec.len() / 2];
-
                         b.iter(|| {
                             let res = ::const_hex::decode_to_slice(black_box($dec), black_box(buf));
                             black_box(res.unwrap());
                         });
+                    }
+                )*
+            }
+
+            mod faster_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $dec.len() / 2];
+                        b.iter(|| {
+                            ::faster_hex::hex_decode(black_box($dec.as_bytes()), black_box(buf))
+                        })
                     }
                 )*
             }
@@ -86,7 +115,6 @@ macro_rules! benches {
                     #[bench]
                     fn $name(b: &mut Bencher) {
                         let buf = &mut [0; $dec.len() / 2];
-
                         b.iter(|| {
                             ::hex::decode_to_slice(black_box($dec), black_box(buf))
                         });
@@ -107,6 +135,19 @@ macro_rules! benches {
                     fn $name(b: &mut Bencher) {
                         b.iter(|| {
                             ::const_hex::encode(black_box($enc))
+                        });
+                    }
+                )*
+            }
+
+            mod faster_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::faster_hex::hex_string(black_box($enc))
                         });
                     }
                 )*
@@ -138,6 +179,20 @@ macro_rules! benches {
                         let buf = &mut [0; $enc.len() * 2];
                         b.iter(|| {
                             ::const_hex::encode_to_slice(black_box($enc), black_box(buf))
+                        });
+                    }
+                )*
+            }
+
+            mod faster_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        let buf = &mut [0; $enc.len() * 2];
+                        b.iter(|| {
+                            ::faster_hex::hex_encode(black_box($enc), black_box(buf)).map(drop)
                         });
                     }
                 )*
