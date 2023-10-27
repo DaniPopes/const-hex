@@ -501,7 +501,7 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
         }
 
         // SAFETY: Lengths are checked above.
-        unsafe { decode_real(input, &mut output) }.map(|()| output)
+        unsafe { decode_checked(input, &mut output) }.map(|()| output)
     }
 
     decode_inner(input.as_ref())
@@ -609,11 +609,14 @@ fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
         return Err(FromHexError::InvalidStringLength);
     }
     // SAFETY: Lengths are checked above.
-    unsafe { decode_real(input, output) }
+    unsafe { decode_checked(input, output) }
 }
 
+/// # Safety
+///
+/// Assumes `output.len() == input.len() / 2`.
 #[inline]
-unsafe fn decode_real(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
     if imp::USE_CHECK_FN {
         // check then decode
         if imp::check(input) {

@@ -33,7 +33,7 @@ pub(crate) const fn check(mut input: &[u8]) -> bool {
     true
 }
 
-/// Default unchecked decoding function.
+/// Default checked decoding function.
 ///
 /// # Safety
 ///
