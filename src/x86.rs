@@ -7,6 +7,8 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+pub(super) const USE_CHECK_FN: bool = false;
+
 const CHUNK_SIZE: usize = core::mem::size_of::<__m128i>();
 
 cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
@@ -56,4 +58,6 @@ pub(super) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     }
 }
 
-pub(super) use generic::decode;
+pub(super) use generic::check;
+pub(super) use generic::decode_checked;
+pub(super) use generic::decode_unchecked;
