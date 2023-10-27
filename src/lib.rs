@@ -636,7 +636,7 @@ unsafe fn invalid_hex_error(input: &[u8]) -> FromHexError {
 }
 
 #[allow(missing_docs, unused)]
-#[cfg(feature = "__fuzzing")]
+#[cfg(all(feature = "__fuzzing", not(miri)))]
 pub mod fuzzing {
     use proptest::test_runner::TestCaseResult;
     use proptest::{prop_assert, prop_assert_eq};
