@@ -78,7 +78,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
         self.const_format_inner::<true>(array)
     }
 
-    /// Same as [`encode_to_slice_inner`], but const-stable.
+    /// Same as `encode_to_slice_inner`, but const-stable.
     const fn const_format_inner<const UPPER: bool>(mut self, array: &[u8; N]) -> Self {
         let mut i = 0;
         while i < N {
