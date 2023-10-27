@@ -811,6 +811,7 @@ pub mod fuzzing {
         fn fuzz_check_false(s in ".{16}[0-9a-fA-F]+") {
             let s = s.as_bytes();
             prop_assert!(crate::check(s).is_err());
+            prop_assert!(crate::const_check(s).is_err());
             prop_assert!(!crate::check_raw(s));
             prop_assert!(!crate::const_check_raw(s));
         }
