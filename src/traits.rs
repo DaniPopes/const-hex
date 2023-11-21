@@ -119,7 +119,7 @@ impl<U: FromHex> FromHex for Box<U> {
 
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        Ok(Box::new(FromHex::from_hex(hex.as_ref())?))
+        FromHex::from_hex(hex.as_ref()).map(Box::new)
     }
 }
 
@@ -133,7 +133,7 @@ where
 
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        Ok(Cow::Owned(FromHex::from_hex(hex.as_ref())?))
+        FromHex::from_hex(hex.as_ref()).map(Cow::Owned)
     }
 }
 
@@ -143,7 +143,7 @@ impl<U: FromHex> FromHex for Rc<U> {
 
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        Ok(Rc::new(FromHex::from_hex(hex.as_ref())?))
+        FromHex::from_hex(hex.as_ref()).map(Rc::new)
     }
 }
 
@@ -153,7 +153,7 @@ impl<U: FromHex> FromHex for Arc<U> {
 
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        Ok(Arc::new(FromHex::from_hex(hex.as_ref())?))
+        FromHex::from_hex(hex.as_ref()).map(Arc::new)
     }
 }
 
@@ -173,9 +173,9 @@ impl FromHex for Vec<i8> {
 
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        let vec = crate::decode(hex.as_ref())?;
         // SAFETY: transmuting `u8` to `i8` is safe.
-        Ok(unsafe { core::mem::transmute::<Vec<u8>, Vec<i8>>(vec) })
+        crate::decode(hex.as_ref())
+            .map(|vec| unsafe { core::mem::transmute::<Vec<u8>, Vec<i8>>(vec) })
     }
 }
 
@@ -204,9 +204,7 @@ impl<const N: usize> FromHex for [u8; N] {
 
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        let mut buf = [0u8; N];
-        crate::decode_to_slice(hex.as_ref(), &mut buf)?;
-        Ok(buf)
+        crate::decode_to_array(hex.as_ref())
     }
 }
 
@@ -215,9 +213,8 @@ impl<const N: usize> FromHex for [i8; N] {
 
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        let mut buf = [0u8; N];
-        crate::decode_to_slice(hex.as_ref(), &mut buf)?;
         // SAFETY: casting `[u8]` to `[i8]` is safe.
-        Ok(unsafe { *(&buf as *const [u8; N] as *const [i8; N]) })
+        crate::decode_to_array(hex.as_ref())
+            .map(|buf| unsafe { *(&buf as *const [u8; N] as *const [i8; N]) })
     }
 }

@@ -563,10 +563,9 @@ pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; 
         let mut output = impl_core::uninit_array();
         // SAFETY: The entire array is never read from.
         let output_slice = unsafe { impl_core::slice_assume_init_mut(&mut output) };
-        decode_to_slice_inner(input, output_slice).map(|()| unsafe {
-            // SAFETY: All elements are initialized.
-            impl_core::array_assume_init(output)
-        })
+        // SAFETY: All elements are initialized.
+        decode_to_slice_inner(input, output_slice)
+            .map(|()| unsafe { impl_core::array_assume_init(output) })
     }
 
     decode_to_array_inner(input.as_ref())
