@@ -159,11 +159,8 @@ pub const NIL: u8 = u8::MAX;
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), const_hex::FromHexError> {
 /// const BUFFER: const_hex::Buffer<4> = const_hex::const_encode(b"kiwi");
 /// assert_eq!(BUFFER.as_str(), "6b697769");
-/// # Ok(())
-/// # }
 /// ```
 #[inline]
 pub const fn const_encode<const N: usize, const PREFIX: bool>(
@@ -182,12 +179,10 @@ pub const fn const_encode<const N: usize, const PREFIX: bool>(
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), const_hex::FromHexError> {
 /// let mut bytes = [0u8; 4 * 2];
 /// const_hex::encode_to_slice(b"kiwi", &mut bytes)?;
 /// assert_eq!(&bytes, b"6b697769");
-/// # Ok(())
-/// # }
+/// # Ok::<_, const_hex::FromHexError>(())
 /// ```
 #[inline]
 pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
@@ -204,12 +199,10 @@ pub fn encode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
 /// # Examples
 ///
 /// ```
-/// # fn main() -> Result<(), const_hex::FromHexError> {
 /// let mut bytes = [0u8; 4 * 2];
 /// const_hex::encode_to_slice_upper(b"kiwi", &mut bytes)?;
 /// assert_eq!(&bytes, b"6B697769");
-/// # Ok(())
-/// # }
+/// # Ok::<_, const_hex::FromHexError>(())
 /// ```
 #[inline]
 pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
