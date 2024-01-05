@@ -72,7 +72,7 @@ cfg_if! {
 
         mod traits;
         #[allow(deprecated)]
-        pub use traits::{FromHex, ToHex};
+        pub use traits::{FromHex, ToHex, ToHexExt};
     }
 }
 
