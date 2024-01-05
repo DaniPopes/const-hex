@@ -55,11 +55,11 @@ pub trait ToHex {
 /// ```
 pub trait ToHexExt {
     /// Encode the hex strict representing `self` into the result with prefix `0x`. Lower case
-    /// letters are used (e.g. `f9b4ca`)
+    /// letters are used (e.g. `0xf9b4ca`)
     fn encode_hex_with_prefix<T: iter::FromIterator<char>>(&self) -> T;
 
     /// Encode the hex strict representing `self` into the result with prefix `0X`. Upper case
-    /// letters are used (e.g. `F9B4CA`)
+    /// letters are used (e.g. `0xF9B4CA`)
     fn encode_hex_upper_with_prefix<T: iter::FromIterator<char>>(&self) -> T;
 }
 
