@@ -70,10 +70,7 @@ struct BytesToHexChars<'a, const UPPER: bool> {
 
 impl<'a, const UPPER: bool> BytesToHexChars<'a, UPPER> {
     fn new(inner: core::slice::Iter<'a, u8>) -> Self {
-        BytesToHexChars {
-            inner,
-            next: None,
-        }
+        BytesToHexChars { inner, next: None }
     }
 }
 
@@ -93,14 +90,18 @@ impl<const UPPER: bool> Iterator for BytesToHexChars<'_, UPPER> {
 }
 
 #[inline]
-fn encode_to_iter<T: iter::FromIterator<char>, const UPPER: bool>(source: core::slice::Iter<'_, u8>) -> T {
+fn encode_to_iter<T: iter::FromIterator<char>, const UPPER: bool>(
+    source: core::slice::Iter<'_, u8>,
+) -> T {
     BytesToHexChars::<UPPER>::new(source).collect()
 }
 
 #[inline]
-fn encode_to_iter_ext<T: iter::FromIterator<char>, const UPPER: bool>(source: core::slice::Iter<'_, u8>) -> T {
+fn encode_to_iter_ext<T: iter::FromIterator<char>, const UPPER: bool>(
+    source: core::slice::Iter<'_, u8>,
+) -> T {
     let chars = BytesToHexChars::<UPPER>::new(source);
-    ['0','x'].into_iter().chain(chars).collect()
+    ['0', 'x'].into_iter().chain(chars).collect()
 }
 
 #[allow(deprecated)]
@@ -117,7 +118,7 @@ impl<T: AsRef<[u8]>> ToHex for T {
 }
 
 #[allow(deprecated)]
-impl <T: ToHex + AsRef<[u8]>> ToHexExt for T {
+impl<T: ToHex + AsRef<[u8]>> ToHexExt for T {
     fn encode_hex_with_prefix<U: iter::FromIterator<char>>(&self) -> U {
         encode_to_iter_ext::<_, false>(self.as_ref().iter())
     }
