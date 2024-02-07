@@ -9,6 +9,7 @@ use alloc::{
     borrow::{Cow, ToOwned},
     boxed::Box,
     rc::Rc,
+    string::String,
     sync::Arc,
     vec::Vec,
 };
