@@ -64,6 +64,7 @@ use arch::{generic, imp};
 mod impl_core;
 
 pub mod traits;
+#[cfg(feature = "alloc")]
 pub use traits::ToHexExt;
 
 // If the `hex` feature is enabled, re-export the `hex` crate's traits.

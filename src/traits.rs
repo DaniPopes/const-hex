@@ -56,6 +56,7 @@ pub trait ToHex {
 /// assert_eq!("Hello world!".encode_hex_with_prefix(), "0x48656c6c6f20776f726c6421");
 /// assert_eq!("Hello world!".encode_hex_upper_with_prefix(), "0x48656C6C6F20776F726C6421");
 /// ```
+#[cfg(feature = "alloc")]
 pub trait ToHexExt {
     /// Encode the hex strict representing `self` into the result.
     /// Lower case letters are used (e.g. `f9b4ca`).
@@ -121,6 +122,7 @@ impl<T: AsRef<[u8]>> ToHex for T {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T: AsRef<[u8]>> ToHexExt for T {
     #[inline]
     fn encode_hex(&self) -> String {
