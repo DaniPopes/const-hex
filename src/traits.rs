@@ -50,7 +50,7 @@ pub trait ToHex {
 /// ```
 /// use const_hex::ToHexExt;
 ///
-/// assert_eq!("Hello world!".encode_hex_with_prefix::<String>(), "0x48656c6c6f20776f726c6421");
+/// assert_eq!("Hello world!".encode_hex_with_prefix(), "0x48656c6c6f20776f726c6421");
 /// ```
 pub trait ToHexExt {
     /// Encode the hex strict representing `self` into the result.
