@@ -16,7 +16,11 @@
 #![cfg_attr(not(feature = "hex"), doc = "[`hex`]: https://docs.rs/hex")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
-#![cfg_attr(feature = "nightly", feature(core_intrinsics, inline_const))]
+#![cfg_attr(
+    feature = "nightly",
+    feature(core_intrinsics, inline_const),
+    allow(internal_features)
+)]
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 #![warn(
     missing_copy_implementations,

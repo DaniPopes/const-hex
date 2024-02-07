@@ -118,18 +118,22 @@ impl<T: AsRef<[u8]>> ToHex for T {
 }
 
 impl<T: AsRef<[u8]>> ToHexExt for T {
+    #[inline]
     fn encode_hex(&self) -> String {
         crate::encode(self)
     }
 
+    #[inline]
     fn encode_hex_upper(&self) -> String {
         crate::encode_upper(self)
     }
 
+    #[inline]
     fn encode_hex_with_prefix(&self) -> String {
         crate::encode_prefixed(self)
     }
 
+    #[inline]
     fn encode_hex_upper_with_prefix(&self) -> String {
         crate::encode_upper_prefixed(self)
     }
