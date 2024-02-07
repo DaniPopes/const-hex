@@ -27,6 +27,7 @@ use alloc::{
 /// use const_hex::ToHex;
 ///
 /// assert_eq!("Hello world!".encode_hex::<String>(), "48656c6c6f20776f726c6421");
+/// assert_eq!("Hello world!".encode_hex_upper::<String>(), "48656C6C6F20776F726C6421");
 /// ```
 #[cfg_attr(feature = "alloc", doc = "\n[`encode`]: crate::encode")]
 #[cfg_attr(not(feature = "alloc"), doc = "\n[`encode`]: crate::encode_to_slice")]
@@ -50,7 +51,10 @@ pub trait ToHex {
 /// ```
 /// use const_hex::ToHexExt;
 ///
+/// assert_eq!("Hello world!".encode_hex(), "48656c6c6f20776f726c6421");
+/// assert_eq!("Hello world!".encode_hex_upper(), "48656C6C6F20776F726C6421");
 /// assert_eq!("Hello world!".encode_hex_with_prefix(), "0x48656c6c6f20776f726c6421");
+/// assert_eq!("Hello world!".encode_hex_upper_with_prefix(), "0x48656C6C6F20776F726C6421");
 /// ```
 pub trait ToHexExt {
     /// Encode the hex strict representing `self` into the result.
