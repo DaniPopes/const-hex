@@ -9,6 +9,7 @@ use alloc::{
     borrow::{Cow, ToOwned},
     boxed::Box,
     rc::Rc,
+    string::String,
     sync::Arc,
     vec::Vec,
 };
@@ -18,7 +19,7 @@ use alloc::{
 /// This trait is implemented for all `T` which implement `AsRef<[u8]>`. This
 /// includes `String`, `str`, `Vec<u8>` and `[u8]`.
 ///
-/// *Note*: instead of using this trait, you might want to use [`encode`].
+/// *Note*: instead of using this trait, you might want to use [`encode`](crate::encode) or [`ToHexExt`].
 ///
 /// # Examples
 ///
@@ -27,18 +28,52 @@ use alloc::{
 /// use const_hex::ToHex;
 ///
 /// assert_eq!("Hello world!".encode_hex::<String>(), "48656c6c6f20776f726c6421");
+/// assert_eq!("Hello world!".encode_hex_upper::<String>(), "48656C6C6F20776F726C6421");
 /// ```
 #[cfg_attr(feature = "alloc", doc = "\n[`encode`]: crate::encode")]
 #[cfg_attr(not(feature = "alloc"), doc = "\n[`encode`]: crate::encode_to_slice")]
 #[deprecated(note = "use `encode` or other specialized functions instead")]
 pub trait ToHex {
-    /// Encode the hex strict representing `self` into the result. Lower case
-    /// letters are used (e.g. `f9b4ca`)
+    /// Encode the hex strict representing `self` into the result.
+    /// Lower case letters are used (e.g. `f9b4ca`).
     fn encode_hex<T: iter::FromIterator<char>>(&self) -> T;
 
-    /// Encode the hex strict representing `self` into the result. Upper case
-    /// letters are used (e.g. `F9B4CA`)
+    /// Encode the hex strict representing `self` into the result.
+    /// Upper case letters are used (e.g. `F9B4CA`).
     fn encode_hex_upper<T: iter::FromIterator<char>>(&self) -> T;
+}
+
+/// Encoding values as hex string with prefix `0x`.
+///
+/// This trait is implemented for all `T` which implement `AsRef<[u8]>`.
+///
+/// # Examples
+///
+/// ```
+/// use const_hex::ToHexExt;
+///
+/// assert_eq!("Hello world!".encode_hex(), "48656c6c6f20776f726c6421");
+/// assert_eq!("Hello world!".encode_hex_upper(), "48656C6C6F20776F726C6421");
+/// assert_eq!("Hello world!".encode_hex_with_prefix(), "0x48656c6c6f20776f726c6421");
+/// assert_eq!("Hello world!".encode_hex_upper_with_prefix(), "0x48656C6C6F20776F726C6421");
+/// ```
+#[cfg(feature = "alloc")]
+pub trait ToHexExt {
+    /// Encode the hex strict representing `self` into the result.
+    /// Lower case letters are used (e.g. `f9b4ca`).
+    fn encode_hex(&self) -> String;
+
+    /// Encode the hex strict representing `self` into the result.
+    /// Upper case letters are used (e.g. `F9B4CA`).
+    fn encode_hex_upper(&self) -> String;
+
+    /// Encode the hex strict representing `self` into the result with prefix `0x`.
+    /// Lower case letters are used (e.g. `0xf9b4ca`).
+    fn encode_hex_with_prefix(&self) -> String;
+
+    /// Encode the hex strict representing `self` into the result with prefix `0X`.
+    /// Upper case letters are used (e.g. `0xF9B4CA`).
+    fn encode_hex_upper_with_prefix(&self) -> String;
 }
 
 struct BytesToHexChars<'a, const UPPER: bool> {
@@ -85,6 +120,29 @@ impl<T: AsRef<[u8]>> ToHex for T {
     #[inline]
     fn encode_hex_upper<U: iter::FromIterator<char>>(&self) -> U {
         encode_to_iter::<_, true>(self.as_ref())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T: AsRef<[u8]>> ToHexExt for T {
+    #[inline]
+    fn encode_hex(&self) -> String {
+        crate::encode(self)
+    }
+
+    #[inline]
+    fn encode_hex_upper(&self) -> String {
+        crate::encode_upper(self)
+    }
+
+    #[inline]
+    fn encode_hex_with_prefix(&self) -> String {
+        crate::encode_prefixed(self)
+    }
+
+    #[inline]
+    fn encode_hex_upper_with_prefix(&self) -> String {
+        crate::encode_upper_prefixed(self)
     }
 }
 

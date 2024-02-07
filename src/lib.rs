@@ -16,7 +16,11 @@
 #![cfg_attr(not(feature = "hex"), doc = "[`hex`]: https://docs.rs/hex")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
-#![cfg_attr(feature = "nightly", feature(core_intrinsics, inline_const))]
+#![cfg_attr(
+    feature = "nightly",
+    feature(core_intrinsics, inline_const),
+    allow(internal_features)
+)]
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 #![warn(
     missing_copy_implementations,
@@ -59,6 +63,10 @@ use arch::{generic, imp};
 
 mod impl_core;
 
+pub mod traits;
+#[cfg(feature = "alloc")]
+pub use traits::ToHexExt;
+
 // If the `hex` feature is enabled, re-export the `hex` crate's traits.
 // Otherwise, use our own with the more optimized implementation.
 cfg_if! {
@@ -70,7 +78,6 @@ cfg_if! {
         mod error;
         pub use error::FromHexError;
 
-        mod traits;
         #[allow(deprecated)]
         pub use traits::{FromHex, ToHex};
     }
