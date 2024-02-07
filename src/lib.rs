@@ -59,6 +59,9 @@ use arch::{generic, imp};
 
 mod impl_core;
 
+pub mod traits;
+pub use traits::ToHexExt;
+
 // If the `hex` feature is enabled, re-export the `hex` crate's traits.
 // Otherwise, use our own with the more optimized implementation.
 cfg_if! {
@@ -70,9 +73,8 @@ cfg_if! {
         mod error;
         pub use error::FromHexError;
 
-        mod traits;
         #[allow(deprecated)]
-        pub use traits::{FromHex, ToHex, ToHexExt};
+        pub use traits::{FromHex, ToHex};
     }
 }
 

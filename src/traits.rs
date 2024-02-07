@@ -18,7 +18,7 @@ use alloc::{
 /// This trait is implemented for all `T` which implement `AsRef<[u8]>`. This
 /// includes `String`, `str`, `Vec<u8>` and `[u8]`.
 ///
-/// *Note*: instead of using this trait, you might want to use [`encode`].
+/// *Note*: instead of using this trait, you might want to use [`encode`](crate::encode) or [`ToHexExt`].
 ///
 /// # Examples
 ///
@@ -32,19 +32,18 @@ use alloc::{
 #[cfg_attr(not(feature = "alloc"), doc = "\n[`encode`]: crate::encode_to_slice")]
 #[deprecated(note = "use `encode` or other specialized functions instead")]
 pub trait ToHex {
-    /// Encode the hex strict representing `self` into the result. Lower case
-    /// letters are used (e.g. `f9b4ca`)
+    /// Encode the hex strict representing `self` into the result.
+    /// Lower case letters are used (e.g. `f9b4ca`).
     fn encode_hex<T: iter::FromIterator<char>>(&self) -> T;
 
-    /// Encode the hex strict representing `self` into the result. Upper case
-    /// letters are used (e.g. `F9B4CA`)
+    /// Encode the hex strict representing `self` into the result.
+    /// Upper case letters are used (e.g. `F9B4CA`).
     fn encode_hex_upper<T: iter::FromIterator<char>>(&self) -> T;
 }
 
 /// Encoding values as hex string with prefix `0x`.
 ///
-/// This trait is implemented for all `T` which implement `AsRef<[u8]>` and `ToHex`.
-///
+/// This trait is implemented for all `T` which implement `AsRef<[u8]>`.
 ///
 /// # Examples
 ///
@@ -54,13 +53,21 @@ pub trait ToHex {
 /// assert_eq!("Hello world!".encode_hex_with_prefix::<String>(), "0x48656c6c6f20776f726c6421");
 /// ```
 pub trait ToHexExt {
-    /// Encode the hex strict representing `self` into the result with prefix `0x`. Lower case
-    /// letters are used (e.g. `0xf9b4ca`)
-    fn encode_hex_with_prefix<T: iter::FromIterator<char>>(&self) -> T;
+    /// Encode the hex strict representing `self` into the result.
+    /// Lower case letters are used (e.g. `f9b4ca`).
+    fn encode_hex(&self) -> String;
 
-    /// Encode the hex strict representing `self` into the result with prefix `0X`. Upper case
-    /// letters are used (e.g. `0xF9B4CA`)
-    fn encode_hex_upper_with_prefix<T: iter::FromIterator<char>>(&self) -> T;
+    /// Encode the hex strict representing `self` into the result.
+    /// Upper case letters are used (e.g. `F9B4CA`).
+    fn encode_hex_upper(&self) -> String;
+
+    /// Encode the hex strict representing `self` into the result with prefix `0x`.
+    /// Lower case letters are used (e.g. `0xf9b4ca`).
+    fn encode_hex_with_prefix(&self) -> String;
+
+    /// Encode the hex strict representing `self` into the result with prefix `0X`.
+    /// Upper case letters are used (e.g. `0xF9B4CA`).
+    fn encode_hex_upper_with_prefix(&self) -> String;
 }
 
 struct BytesToHexChars<'a, const UPPER: bool> {
@@ -69,8 +76,11 @@ struct BytesToHexChars<'a, const UPPER: bool> {
 }
 
 impl<'a, const UPPER: bool> BytesToHexChars<'a, UPPER> {
-    fn new(inner: core::slice::Iter<'a, u8>) -> Self {
-        BytesToHexChars { inner, next: None }
+    fn new(inner: &'a [u8]) -> Self {
+        BytesToHexChars {
+            inner: inner.iter(),
+            next: None,
+        }
     }
 }
 
@@ -90,41 +100,38 @@ impl<const UPPER: bool> Iterator for BytesToHexChars<'_, UPPER> {
 }
 
 #[inline]
-fn encode_to_iter<T: iter::FromIterator<char>, const UPPER: bool>(
-    source: core::slice::Iter<'_, u8>,
-) -> T {
+fn encode_to_iter<T: iter::FromIterator<char>, const UPPER: bool>(source: &[u8]) -> T {
     BytesToHexChars::<UPPER>::new(source).collect()
-}
-
-#[inline]
-fn encode_to_iter_ext<T: iter::FromIterator<char>, const UPPER: bool>(
-    source: core::slice::Iter<'_, u8>,
-) -> T {
-    let chars = BytesToHexChars::<UPPER>::new(source);
-    ['0', 'x'].into_iter().chain(chars).collect()
 }
 
 #[allow(deprecated)]
 impl<T: AsRef<[u8]>> ToHex for T {
     #[inline]
     fn encode_hex<U: iter::FromIterator<char>>(&self) -> U {
-        encode_to_iter::<_, false>(self.as_ref().iter())
+        encode_to_iter::<_, false>(self.as_ref())
     }
 
     #[inline]
     fn encode_hex_upper<U: iter::FromIterator<char>>(&self) -> U {
-        encode_to_iter::<_, true>(self.as_ref().iter())
+        encode_to_iter::<_, true>(self.as_ref())
     }
 }
 
-#[allow(deprecated)]
-impl<T: ToHex + AsRef<[u8]>> ToHexExt for T {
-    fn encode_hex_with_prefix<U: iter::FromIterator<char>>(&self) -> U {
-        encode_to_iter_ext::<_, false>(self.as_ref().iter())
+impl<T: AsRef<[u8]>> ToHexExt for T {
+    fn encode_hex(&self) -> String {
+        crate::encode(self)
     }
 
-    fn encode_hex_upper_with_prefix<U: iter::FromIterator<char>>(&self) -> U {
-        encode_to_iter_ext::<_, true>(self.as_ref().iter())
+    fn encode_hex_upper(&self) -> String {
+        crate::encode_upper(self)
+    }
+
+    fn encode_hex_with_prefix(&self) -> String {
+        crate::encode_prefixed(self)
+    }
+
+    fn encode_hex_upper_with_prefix(&self) -> String {
+        crate::encode_upper_prefixed(self)
     }
 }
 
