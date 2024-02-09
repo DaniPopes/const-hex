@@ -19,8 +19,6 @@ use alloc::{
 /// This trait is implemented for all `T` which implement `AsRef<[u8]>`. This
 /// includes `String`, `str`, `Vec<u8>` and `[u8]`.
 ///
-/// *Note*: instead of using this trait, you might want to use [`encode`](crate::encode) or [`ToHexExt`].
-///
 /// # Examples
 ///
 /// ```
@@ -32,7 +30,7 @@ use alloc::{
 /// ```
 #[cfg_attr(feature = "alloc", doc = "\n[`encode`]: crate::encode")]
 #[cfg_attr(not(feature = "alloc"), doc = "\n[`encode`]: crate::encode_to_slice")]
-#[deprecated(note = "use `encode` or other specialized functions instead")]
+#[deprecated(note = "use `ToHexExt` instead")]
 pub trait ToHex {
     /// Encode the hex strict representing `self` into the result.
     /// Lower case letters are used (e.g. `f9b4ca`).
@@ -43,9 +41,10 @@ pub trait ToHex {
     fn encode_hex_upper<T: iter::FromIterator<char>>(&self) -> T;
 }
 
-/// Encoding values as hex string with prefix `0x`.
+/// Encoding values as hex string.
 ///
-/// This trait is implemented for all `T` which implement `AsRef<[u8]>`.
+/// This trait is implemented for all `T` which implement `AsRef<[u8]>`. This
+/// includes `String`, `str`, `Vec<u8>` and `[u8]`.
 ///
 /// # Examples
 ///

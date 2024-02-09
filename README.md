@@ -8,8 +8,9 @@
 This crate provides a fast conversion of byte arrays to hexadecimal strings,
 both at compile time, and at run time.
 
-Extends the [`hex`] crate's implementation with [const-eval], a
-[const-generics formatting buffer][buffer], similar to [`itoa`]'s, and more.
+It aims to be a drop-in replacement for the [`hex`] crate, as well as extending
+the API with [const-eval], a [const-generics formatting buffer][buffer], similar
+to [`itoa`]'s, and more.
 
 _Version requirement: rustc 1.64+_
 
