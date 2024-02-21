@@ -254,4 +254,5 @@ benches! {
     bench2_256(data::ENC_256, data::DEC_256)
     bench3_2048(data::ENC_2048, data::DEC_2048)
     bench4_16384(data::ENC_16384, data::DEC_16384)
+    bench5_262144(data::ENC_262144, data::DEC_262144)
 }

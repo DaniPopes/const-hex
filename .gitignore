@@ -3,3 +3,6 @@ Cargo.lock
 
 .vscode
 .idea
+
+benches/bench/*.hex
+benches/bench/*.bin

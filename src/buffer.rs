@@ -4,6 +4,7 @@ use core::slice;
 use core::str;
 
 #[cfg(feature = "alloc")]
+#[allow(unused_imports)]
 use alloc::{string::String, vec::Vec};
 
 /// A correctly sized stack allocation for the formatted bytes to be written

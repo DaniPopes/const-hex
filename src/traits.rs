@@ -5,6 +5,7 @@
 use core::iter;
 
 #[cfg(feature = "alloc")]
+#[allow(unused_imports)]
 use alloc::{
     borrow::{Cow, ToOwned},
     boxed::Box,

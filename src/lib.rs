@@ -54,6 +54,7 @@ extern crate alloc;
 use cfg_if::cfg_if;
 
 #[cfg(feature = "alloc")]
+#[allow(unused_imports)]
 use alloc::{string::String, vec::Vec};
 
 // `cpufeatures` may be unused when `force-generic` is enabled.
