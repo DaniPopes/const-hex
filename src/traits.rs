@@ -172,45 +172,45 @@ pub trait FromHex: Sized {
 }
 
 #[cfg(feature = "alloc")]
-impl<U: FromHex> FromHex for Box<U> {
-    type Error = U::Error;
+impl<T: FromHex> FromHex for Box<T> {
+    type Error = T::Error;
 
     #[inline]
-    fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
+    fn from_hex<U: AsRef<[u8]>>(hex: U) -> Result<Self, Self::Error> {
         FromHex::from_hex(hex.as_ref()).map(Box::new)
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<U> FromHex for Cow<'_, U>
+impl<T> FromHex for Cow<'_, T>
 where
-    U: Clone + ToOwned,
-    U::Owned: FromHex,
+    T: ToOwned + ?Sized,
+    T::Owned: FromHex,
 {
-    type Error = <U::Owned as FromHex>::Error;
+    type Error = <T::Owned as FromHex>::Error;
 
     #[inline]
-    fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
+    fn from_hex<U: AsRef<[u8]>>(hex: U) -> Result<Self, Self::Error> {
         FromHex::from_hex(hex.as_ref()).map(Cow::Owned)
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<U: FromHex> FromHex for Rc<U> {
-    type Error = U::Error;
+impl<T: FromHex> FromHex for Rc<T> {
+    type Error = T::Error;
 
     #[inline]
-    fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
+    fn from_hex<U: AsRef<[u8]>>(hex: U) -> Result<Self, Self::Error> {
         FromHex::from_hex(hex.as_ref()).map(Rc::new)
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<U: FromHex> FromHex for Arc<U> {
-    type Error = U::Error;
+impl<T: FromHex> FromHex for Arc<T> {
+    type Error = T::Error;
 
     #[inline]
-    fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
+    fn from_hex<U: AsRef<[u8]>>(hex: U) -> Result<Self, Self::Error> {
         FromHex::from_hex(hex.as_ref()).map(Arc::new)
     }
 }
