@@ -11,7 +11,7 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
         #[inline(always)]
         fn has_neon() -> bool {
-            is_aarch64_feature_detected!("neon")
+            std::arch::is_aarch64_feature_detected!("neon")
         }
     } else {
         #[inline(always)]

@@ -18,15 +18,15 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
         #[inline(always)]
         fn has_sse2() -> bool {
-            is_x86_feature_detected!("sse2")
+            std::arch::is_x86_feature_detected!("sse2")
         }
         #[inline(always)]
         fn has_ssse3() -> bool {
-            is_x86_feature_detected!("ssse3")
+            std::arch::is_x86_feature_detected!("ssse3")
         }
         #[inline(always)]
         fn has_avx2() -> bool {
-            is_x86_feature_detected!("avx2")
+            std::arch::is_x86_feature_detected!("avx2")
         }
     } else {
         cpufeatures::new!(cpuid_sse2, "sse2");
