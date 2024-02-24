@@ -29,8 +29,7 @@ This crate is 10 to 50 times faster than [`hex`] in encoding and decoding, and
 The following benchmarks were ran on an AMD Ryzen 9 7950X, compiled with
 `1.78.0-nightly (a4472498d 2024-02-15)` on `x86_64-unknown-linux-gnu`.
 
-You can run these benchmarks with
-`./benches/bench/gen-data.py && cargo bench --features std` on a nightly
+You can run these benchmarks with `cargo bench --features std` on a nightly
 compiler.
 
 ```log
