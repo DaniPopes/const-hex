@@ -17,15 +17,15 @@ const T_MASK: i32 = 65535;
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
         #[inline(always)]
-        pub(super) fn has_sse2() -> bool {
+        fn has_sse2() -> bool {
             is_x86_feature_detected!("sse2")
         }
         #[inline(always)]
-        pub(super) fn has_ssse3() -> bool {
+        fn has_ssse3() -> bool {
             is_x86_feature_detected!("ssse3")
         }
         #[inline(always)]
-        pub(super) fn has_avx2() -> bool {
+        fn has_avx2() -> bool {
             is_x86_feature_detected!("avx2")
         }
     } else {

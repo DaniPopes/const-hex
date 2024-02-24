@@ -7,9 +7,23 @@ use core::arch::aarch64::*;
 pub(crate) const USE_CHECK_FN: bool = false;
 const CHUNK_SIZE: usize = core::mem::size_of::<uint8x16_t>();
 
+cfg_if::cfg_if! {
+    if #[cfg(feature = "std")] {
+        #[inline(always)]
+        fn has_neon() -> bool {
+            is_aarch64_feature_detected!("neon")
+        }
+    } else {
+        #[inline(always)]
+        fn has_neon() -> bool {
+            cfg!(target_feature = "neon")
+        }
+    }
+}
+
 #[inline]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
-    if input.len() < CHUNK_SIZE || !cfg!(target_feature = "neon") || cfg!(miri) {
+    if cfg!(miri) || !has_neon() || input.len() < CHUNK_SIZE {
         return generic::encode::<UPPER>(input, output);
     }
     encode_neon::<UPPER>(input, output);

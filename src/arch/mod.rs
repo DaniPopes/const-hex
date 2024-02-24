@@ -1,9 +1,7 @@
-use cfg_if::cfg_if;
-
 pub(crate) mod generic;
 
 // The main implementation functions.
-cfg_if! {
+cfg_if::cfg_if! {
     if #[cfg(feature = "force-generic")] {
         pub(crate) use generic as imp;
     } else if #[cfg(feature = "portable-simd")] {
