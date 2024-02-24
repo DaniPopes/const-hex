@@ -6,7 +6,7 @@ ROOT = "benches/bench"
 
 enc_rs = []
 dec_rs = []
-for i in [32, 256, 2048, 16384, 262144]:
+for i in [32, 256, 2048, 16384, 131072, 1048576]:
     data = bytearray([random.randint(0, 255) for _ in range(i)])
     data_bin_fname = f"data_{i}.bin"
     open(f"{ROOT}/{data_bin_fname}", "wb").write(data)

@@ -250,9 +250,10 @@ macro_rules! benches {
 }
 
 benches! {
-    bench1_32(data::ENC_32, data::DEC_32)
-    bench2_256(data::ENC_256, data::DEC_256)
-    bench3_2048(data::ENC_2048, data::DEC_2048)
-    bench4_16384(data::ENC_16384, data::DEC_16384)
-    bench5_262144(data::ENC_262144, data::DEC_262144)
+    bench1_32b(data::ENC_32, data::DEC_32)
+    bench2_256b(data::ENC_256, data::DEC_256)
+    bench3_2k(data::ENC_2048, data::DEC_2048)
+    bench4_16k(data::ENC_16384, data::DEC_16384)
+    bench5_128k(data::ENC_131072, data::DEC_131072)
+    bench6_1m(data::ENC_1048576, data::DEC_1048576)
 }
