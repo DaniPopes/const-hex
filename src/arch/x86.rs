@@ -14,13 +14,33 @@ const CHUNK_SIZE_AVX: usize = core::mem::size_of::<__m256i>();
 
 const T_MASK: i32 = 65535;
 
-cpufeatures::new!(cpuid_sse2, "sse2");
-cpufeatures::new!(cpuid_ssse3, "sse2", "ssse3");
-cpufeatures::new!(cpuid_avx2, "avx2");
+cfg_if::cfg_if! {
+    if #[cfg(feature = "std")] {
+        #[inline(always)]
+        pub(super) fn has_sse2() -> bool {
+            is_x86_feature_detected!("sse2")
+        }
+        #[inline(always)]
+        pub(super) fn has_ssse3() -> bool {
+            is_x86_feature_detected!("ssse3")
+        }
+        #[inline(always)]
+        pub(super) fn has_avx2() -> bool {
+            is_x86_feature_detected!("avx2")
+        }
+    } else {
+        cpufeatures::new!(cpuid_sse2, "sse2");
+        use cpuid_sse2::get as has_sse2;
+        cpufeatures::new!(cpuid_ssse3, "ssse3");
+        use cpuid_ssse3::get as has_ssse3;
+        cpufeatures::new!(cpuid_avx2, "avx2");
+        use cpuid_avx2::get as has_avx2;
+    }
+}
 
 #[inline]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
-    if input.len() < CHUNK_SIZE_SSE || !cpuid_ssse3::get() {
+    if !has_ssse3() || input.len() < CHUNK_SIZE_SSE {
         return generic::encode::<UPPER>(input, output);
     }
     encode_ssse3::<UPPER>(input, output);
@@ -65,7 +85,7 @@ unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: *mut u8) {
 
 #[inline]
 pub(crate) fn check(input: &[u8]) -> bool {
-    if input.len() < CHUNK_SIZE_SSE || !cpuid_sse2::get() {
+    if !has_sse2() || input.len() < CHUNK_SIZE_SSE {
         return generic::check(input);
     }
     unsafe { check_sse2(input) }
@@ -111,14 +131,13 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
 
 #[inline]
 pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
-    if input.len() < CHUNK_SIZE_AVX || !cpuid_avx2::get() {
+    if !has_avx2() || input.len() < CHUNK_SIZE_AVX {
         return generic::decode_unchecked(input, output);
     }
     decode_avx2(input, output);
 }
 
 /// Modified from [`faster-hex`](https://github.com/nervosnetwork/faster-hex/blob/856aba7b141a5fe16113fae110d535065882f25a/src/decode.rs).
-#[inline(never)]
 #[target_feature(enable = "avx2")]
 unsafe fn decode_avx2(mut input: &[u8], mut output: &mut [u8]) {
     #[rustfmt::skip]
