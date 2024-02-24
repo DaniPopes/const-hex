@@ -3,7 +3,7 @@
 use core::fmt;
 
 /// The error type for decoding a hex string into `Vec<u8>` or `[u8; N]`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::module_name_repetitions)]
 pub enum FromHexError {
     /// An invalid character was found. Valid ones are: `0...9`, `a...f`
