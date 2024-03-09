@@ -48,6 +48,7 @@
 )]
 
 #[cfg(feature = "alloc")]
+#[allow(unused_imports)]
 #[macro_use]
 extern crate alloc;
 
@@ -576,16 +577,24 @@ pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; 
 
 #[cfg(feature = "alloc")]
 fn encode_inner<const UPPER: bool, const PREFIX: bool>(data: &[u8]) -> String {
-    let mut buf = vec![0; (PREFIX as usize + data.len()) * 2];
-    let output = if PREFIX {
-        buf[0] = b'0';
-        buf[1] = b'x';
-        &mut buf[2..]
-    } else {
-        &mut buf[..]
+    let capacity = PREFIX as usize * 2 + data.len() * 2;
+    let mut buf = Vec::<u8>::with_capacity(capacity);
+    // SAFETY: The entire vec is never read from, and gets dropped if decoding fails.
+    #[allow(clippy::uninit_vec)]
+    unsafe {
+        buf.set_len(capacity)
     };
+    let mut output = buf.as_mut_ptr();
+    if PREFIX {
+        // SAFETY: `output` is long enough.
+        unsafe {
+            output.add(0).write(b'0');
+            output.add(1).write(b'x');
+            output = output.add(2);
+        }
+    }
     // SAFETY: `output` is long enough (input.len() * 2).
-    unsafe { imp::encode::<UPPER>(data, output.as_mut_ptr()) };
+    unsafe { imp::encode::<UPPER>(data, output) };
     // SAFETY: We only write only ASCII bytes.
     unsafe { String::from_utf8_unchecked(buf) }
 }
