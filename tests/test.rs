@@ -111,6 +111,27 @@ fn decode_upper() {
 }
 
 #[test]
+fn check() {
+    assert_eq!(const_hex::check(ALL_LOWER), Ok(()));
+    assert_eq!(const_hex::check(ALL_UPPER), Ok(()));
+    assert!(const_hex::check_raw(ALL_LOWER));
+    assert!(const_hex::check_raw(ALL_UPPER));
+
+    let error_cases = [
+        ("ag", 1, 'g'),
+        ("0xbz", 3, 'z'),
+        ("0x12340000000n", 13, 'n'),
+    ];
+    for (s, index, c) in error_cases {
+        assert_eq!(s[index..].chars().next(), Some(c), "{s:?}");
+        assert_eq!(
+            const_hex::check(s),
+            Err(const_hex::FromHexError::InvalidHexCharacter { c, index })
+        );
+    }
+}
+
+#[test]
 #[cfg(all(feature = "serde", feature = "alloc", not(feature = "hex")))]
 fn serde() {
     #[derive(serde::Serialize, serde::Deserialize)]

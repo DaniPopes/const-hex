@@ -362,11 +362,15 @@ pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
         if input.len() % 2 != 0 {
             return Err(FromHexError::OddLength);
         }
-        let input = strip_prefix(input);
-        if imp::check(input) {
+        let stripped = strip_prefix(input);
+        if imp::check(stripped) {
             Ok(())
         } else {
-            Err(unsafe { invalid_hex_error(input) })
+            let mut e = unsafe { invalid_hex_error(stripped) };
+            if let FromHexError::InvalidHexCharacter { ref mut index, .. } = e {
+                *index += input.len() - stripped.len();
+            }
+            Err(e)
         }
     }
 
@@ -667,14 +671,16 @@ const fn strip_prefix(bytes: &[u8]) -> &[u8] {
 /// Assumes `input` contains at least one invalid character.
 #[cold]
 #[cfg_attr(debug_assertions, track_caller)]
-const unsafe fn invalid_hex_error(mut input: &[u8]) -> FromHexError {
+const unsafe fn invalid_hex_error(input: &[u8]) -> FromHexError {
+    // Find the first invalid character.
     let mut index = None;
-    while let [byte, rest @ ..] = input {
+    let mut iter = input;
+    while let [byte, rest @ ..] = iter {
         if HEX_DECODE_LUT[*byte as usize] == NIL {
-            index = Some(input.len() - rest.len());
+            index = Some(input.len() - rest.len() - 1);
             break;
         }
-        input = rest;
+        iter = rest;
     }
 
     let index = match index {

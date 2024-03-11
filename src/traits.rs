@@ -177,7 +177,7 @@ impl<T: FromHex> FromHex for Box<T> {
 
     #[inline]
     fn from_hex<U: AsRef<[u8]>>(hex: U) -> Result<Self, Self::Error> {
-        FromHex::from_hex(hex.as_ref()).map(Box::new)
+        FromHex::from_hex(hex.as_ref()).map(Self::new)
     }
 }
 
@@ -201,7 +201,7 @@ impl<T: FromHex> FromHex for Rc<T> {
 
     #[inline]
     fn from_hex<U: AsRef<[u8]>>(hex: U) -> Result<Self, Self::Error> {
-        FromHex::from_hex(hex.as_ref()).map(Rc::new)
+        FromHex::from_hex(hex.as_ref()).map(Self::new)
     }
 }
 
@@ -211,7 +211,7 @@ impl<T: FromHex> FromHex for Arc<T> {
 
     #[inline]
     fn from_hex<U: AsRef<[u8]>>(hex: U) -> Result<Self, Self::Error> {
-        FromHex::from_hex(hex.as_ref()).map(Arc::new)
+        FromHex::from_hex(hex.as_ref()).map(Self::new)
     }
 }
 
@@ -233,7 +233,7 @@ impl FromHex for Vec<i8> {
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         // SAFETY: transmuting `u8` to `i8` is safe.
         crate::decode(hex.as_ref())
-            .map(|vec| unsafe { core::mem::transmute::<Vec<u8>, Vec<i8>>(vec) })
+            .map(|vec| unsafe { core::mem::transmute::<Vec<u8>, Self>(vec) })
     }
 }
 
