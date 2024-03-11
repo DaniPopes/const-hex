@@ -232,8 +232,7 @@ impl FromHex for Vec<i8> {
     #[inline]
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
         // SAFETY: transmuting `u8` to `i8` is safe.
-        crate::decode(hex.as_ref())
-            .map(|vec| unsafe { core::mem::transmute::<Vec<u8>, Self>(vec) })
+        crate::decode(hex.as_ref()).map(|vec| unsafe { core::mem::transmute::<Vec<u8>, Self>(vec) })
     }
 }
 
