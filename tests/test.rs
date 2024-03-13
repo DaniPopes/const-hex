@@ -112,6 +112,9 @@ fn decode_upper() {
 
 #[test]
 fn check() {
+    assert_eq!(const_hex::check(""), Ok(()));
+    assert!(const_hex::check_raw(""));
+
     assert_eq!(const_hex::check(ALL_LOWER), Ok(()));
     assert_eq!(const_hex::check(ALL_UPPER), Ok(()));
     assert!(const_hex::check_raw(ALL_LOWER));
