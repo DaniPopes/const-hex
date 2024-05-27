@@ -29,6 +29,50 @@ impl<const N: usize> fmt::Display for StdFormat<N> {
 
 macro_rules! benches {
     ($($name:ident($enc:expr, $dec:expr))*) => {
+        mod check {
+            use super::*;
+
+            mod const_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::const_hex::check(black_box($dec))
+                        });
+                    }
+                )*
+            }
+
+            mod faster_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::faster_hex::hex_check(black_box($dec.as_bytes()))
+                        });
+                    }
+                )*
+            }
+
+            mod naive {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            let dec = black_box($dec.as_bytes());
+                            dec.iter().all(u8::is_ascii_hexdigit)
+                        });
+                    }
+                )*
+            }
+        }
+
         #[cfg(feature = "alloc")]
         mod decode {
             use super::*;

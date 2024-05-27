@@ -24,8 +24,8 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 /// Default check function.
 #[inline]
 pub(crate) const fn check(mut input: &[u8]) -> bool {
-    while let [byte, rest @ ..] = input {
-        if HEX_DECODE_LUT[*byte as usize] == NIL {
+    while let &[byte, ref rest @ ..] = input {
+        if HEX_DECODE_LUT[byte as usize] == NIL {
             return false;
         }
         input = rest;
@@ -48,8 +48,9 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
 ///
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex.
 pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
-    let r = unsafe { decode_maybe_check::<false>(input, output) };
-    debug_assert!(r);
+    #[allow(unused_braces)] // False positive on older rust versions.
+    let success = unsafe { decode_maybe_check::<{ cfg!(debug_assertions) }>(input, output) };
+    debug_assert!(success);
 }
 
 /// Default decoding function. Checks input validity if `CHECK` is `true`, otherwise assumes it.
@@ -67,8 +68,6 @@ unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], output: &mut [u8])
                 if $var == NIL {
                     return false;
                 }
-            } else {
-                debug_assert_ne!($var, NIL, "invalid hex input");
             }
         };
     }

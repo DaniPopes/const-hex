@@ -40,11 +40,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo build
-      - run: cargo test
       - run: cargo build --no-default-features
-      - run: cargo test --tests --no-default-features
-      - run: cargo test --tests --no-default-features --features force-generic
-      - run: cargo test --tests --no-default-features --features nightly,portable-simd
+      - run: cargo test
+      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --features force-generic
+      - run: cargo test --no-default-features --features nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
         if: matrix.rust == 'nightly'
@@ -65,8 +65,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@miri
         with:
           target: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo miri setup --target ${{ matrix.target }} ${{ matrix.flags }}
       - run: cargo miri test --target ${{ matrix.target }} ${{ matrix.flags }}
 
   fuzz:
