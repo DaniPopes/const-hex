@@ -21,7 +21,7 @@
 #![cfg_attr(
     feature = "nightly",
     feature(core_intrinsics, inline_const),
-    allow(internal_features)
+    allow(internal_features, stable_features)
 )]
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 #![warn(

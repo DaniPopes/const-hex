@@ -12,8 +12,6 @@ pub(crate) const USE_CHECK_FN: bool = true;
 const CHUNK_SIZE_SSE: usize = core::mem::size_of::<__m128i>();
 const CHUNK_SIZE_AVX: usize = core::mem::size_of::<__m256i>();
 
-const T_MASK: i32 = 65535;
-
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
         #[inline(always)]
@@ -58,11 +56,11 @@ unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: *mut u8) {
     let input_remainder = input_chunks.remainder();
 
     let mut i = 0;
-    for input_chunk in input_chunks {
+    for chunk in input_chunks {
         // Load input bytes and mask to nibbles.
-        let input_bytes = _mm_loadu_si128(input_chunk.as_ptr().cast());
-        let mut lo = _mm_and_si128(input_bytes, mask_lo);
-        let mut hi = _mm_srli_epi32::<4>(_mm_and_si128(input_bytes, mask_hi));
+        let chunk = _mm_loadu_si128(chunk.as_ptr().cast());
+        let mut lo = _mm_and_si128(chunk, mask_lo);
+        let mut hi = _mm_srli_epi32::<4>(_mm_and_si128(chunk, mask_hi));
 
         // Lookup the corresponding ASCII hex digit for each nibble.
         lo = _mm_shuffle_epi8(hex_table, lo);
@@ -101,32 +99,26 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
     let ascii_la = _mm_set1_epi8((b'a' - 1) as i8);
     let ascii_lf = _mm_set1_epi8((b'f' + 1) as i8);
 
-    let input_chunks = input.chunks_exact(CHUNK_SIZE_SSE);
-    let input_remainder = input_chunks.remainder();
-    for input_chunk in input_chunks {
-        let unchecked = _mm_loadu_si128(input_chunk.as_ptr().cast());
+    let (prefix, chunks, suffix) = input.align_to::<__m128i>();
+    generic::check(prefix)
+        && chunks.iter().all(|&chunk| {
+            let ge0 = _mm_cmpgt_epi8(chunk, ascii_zero);
+            let le9 = _mm_cmplt_epi8(chunk, ascii_nine);
+            let valid_digit = _mm_and_si128(ge0, le9);
 
-        let gt0 = _mm_cmpgt_epi8(unchecked, ascii_zero);
-        let lt9 = _mm_cmplt_epi8(unchecked, ascii_nine);
-        let valid_digit = _mm_and_si128(gt0, lt9);
+            let geua = _mm_cmpgt_epi8(chunk, ascii_ua);
+            let leuf = _mm_cmplt_epi8(chunk, ascii_uf);
+            let valid_upper = _mm_and_si128(geua, leuf);
 
-        let gtua = _mm_cmpgt_epi8(unchecked, ascii_ua);
-        let ltuf = _mm_cmplt_epi8(unchecked, ascii_uf);
+            let gela = _mm_cmpgt_epi8(chunk, ascii_la);
+            let lelf = _mm_cmplt_epi8(chunk, ascii_lf);
+            let valid_lower = _mm_and_si128(gela, lelf);
 
-        let gtla = _mm_cmpgt_epi8(unchecked, ascii_la);
-        let ltlf = _mm_cmplt_epi8(unchecked, ascii_lf);
-
-        let valid_lower = _mm_and_si128(gtla, ltlf);
-        let valid_upper = _mm_and_si128(gtua, ltuf);
-        let valid_letter = _mm_or_si128(valid_lower, valid_upper);
-
-        let ret = _mm_movemask_epi8(_mm_or_si128(valid_digit, valid_letter));
-        if ret != T_MASK {
-            return false;
-        }
-    }
-
-    generic::check(input_remainder)
+            let valid_letter = _mm_or_si128(valid_lower, valid_upper);
+            let valid_mask = _mm_movemask_epi8(_mm_or_si128(valid_digit, valid_letter));
+            valid_mask == 0xffff
+        })
+        && generic::check(suffix)
 }
 
 #[inline]
