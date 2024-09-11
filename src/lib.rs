@@ -101,31 +101,8 @@ cfg_if! {
             };
         }
     } else {
-        // On stable we can use #[cold] to get a equivalent effect: this attribute
-        // suggests that the function is unlikely to be called
-        #[inline(always)]
-        #[cold]
-        #[allow(clippy::missing_const_for_fn)]
-        fn cold() {}
-
-        #[inline(always)]
-        #[allow(dead_code)]
-        #[allow(clippy::missing_const_for_fn)]
-        fn likely(b: bool) -> bool {
-            if !b {
-                cold();
-            }
-            b
-        }
-
-        #[inline(always)]
-        #[allow(clippy::missing_const_for_fn)]
-        fn unlikely(b: bool) -> bool {
-            if b {
-                cold();
-            }
-            b
-        }
+        #[allow(unused_imports)]
+        use core::convert::{identity as likely, identity as unlikely};
 
         macro_rules! maybe_const_assert {
             ($($tt:tt)*) => {
