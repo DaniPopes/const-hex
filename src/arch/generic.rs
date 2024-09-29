@@ -21,6 +21,29 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     }
 }
 
+/// Encodes unaligned chunks of `T` in `input` to `output` using `encode_chunk`.
+///
+/// The remainder is encoded using the generic [`encode`].
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy>(
+    input: &[u8],
+    output: *mut u8,
+    mut encode_chunk: impl FnMut(T) -> (T, T),
+) {
+    let (chunks, remainder) = chunks_unaligned::<T>(input);
+    let remainder_i = chunks.len() * core::mem::size_of::<T>();
+    let chunk_output = output.cast::<T>();
+    for (i, chunk) in chunks.enumerate() {
+        let (lo, hi) = encode_chunk(chunk);
+        unsafe {
+            chunk_output.add(i * 2).write_unaligned(lo);
+            chunk_output.add((i * 2) + 1).write_unaligned(hi);
+        }
+    }
+    unsafe { encode::<UPPER>(remainder, unsafe { output.add(remainder_i) }) };
+}
+
 /// Default check function.
 #[inline]
 pub(crate) const fn check(mut input: &[u8]) -> bool {
@@ -39,11 +62,10 @@ pub(crate) const fn check(mut input: &[u8]) -> bool {
 #[allow(dead_code)]
 pub(crate) fn check_unaligned_chunks<T: Copy>(
     input: &[u8],
-    mut check_chunk: impl FnMut(T) -> bool,
+    check_chunk: impl FnMut(T) -> bool,
 ) -> bool {
-    let mut chunks = input.chunks_exact(core::mem::size_of::<T>());
-    chunks.all(|chunk| check_chunk(unsafe { chunk.as_ptr().cast::<T>().read_unaligned() }))
-        && check(chunks.remainder())
+    let (mut chunks, remainder) = chunks_unaligned(input);
+    chunks.all(check_chunk) && check(remainder)
 }
 
 /// Default checked decoding function.
@@ -94,4 +116,14 @@ unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], output: &mut [u8])
         i += 1;
     }
     true
+}
+
+#[inline]
+fn chunks_unaligned<T: Copy>(input: &[u8]) -> (impl ExactSizeIterator<Item = T> + '_, &[u8]) {
+    let chunks = input.chunks_exact(core::mem::size_of::<T>());
+    let remainder = chunks.remainder();
+    (
+        chunks.map(|chunk| unsafe { chunk.as_ptr().cast::<T>().read_unaligned() }),
+        remainder,
+    )
 }

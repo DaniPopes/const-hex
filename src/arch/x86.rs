@@ -46,21 +46,14 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 
 #[target_feature(enable = "ssse3")]
 unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: *mut u8) {
-    // Load table and construct masks.
+    // Load table.
     let hex_table = _mm_loadu_si128(get_chars_table::<UPPER>().as_ptr().cast());
-    let mask_lo = _mm_set1_epi8(0x0F);
-    #[allow(clippy::cast_possible_wrap)]
-    let mask_hi = _mm_set1_epi8(0xF0u8 as i8);
 
-    let input_chunks = input.chunks_exact(CHUNK_SIZE_SSE);
-    let input_remainder = input_chunks.remainder();
-
-    let mut i = 0;
-    for chunk in input_chunks {
+    generic::encode_unaligned_chunks::<UPPER, _>(input, output, |chunk: __m128i| {
         // Load input bytes and mask to nibbles.
-        let chunk = _mm_loadu_si128(chunk.as_ptr().cast());
-        let mut lo = _mm_and_si128(chunk, mask_lo);
-        let mut hi = _mm_srli_epi32::<4>(_mm_and_si128(chunk, mask_hi));
+        let mut lo = _mm_and_si128(chunk, _mm_set1_epi8(0x0F));
+        #[allow(clippy::cast_possible_wrap)]
+        let mut hi = _mm_srli_epi32::<4>(_mm_and_si128(chunk, _mm_set1_epi8(0xF0u8 as i8)));
 
         // Lookup the corresponding ASCII hex digit for each nibble.
         lo = _mm_shuffle_epi8(hex_table, lo);
@@ -69,16 +62,8 @@ unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: *mut u8) {
         // Interleave the nibbles ([hi[0], lo[0], hi[1], lo[1], ...]).
         let hex_lo = _mm_unpacklo_epi8(hi, lo);
         let hex_hi = _mm_unpackhi_epi8(hi, lo);
-
-        // Store result into the output buffer.
-        _mm_storeu_si128(output.add(i).cast(), hex_lo);
-        _mm_storeu_si128(output.add(i + CHUNK_SIZE_SSE).cast(), hex_hi);
-        i += CHUNK_SIZE_SSE * 2;
-    }
-
-    if !input_remainder.is_empty() {
-        generic::encode::<UPPER>(input_remainder, output.add(i));
-    }
+        (hex_lo, hex_hi)
+    });
 }
 
 #[inline]
