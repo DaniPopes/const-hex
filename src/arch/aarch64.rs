@@ -5,7 +5,6 @@ use crate::get_chars_table;
 use core::arch::aarch64::*;
 
 pub(crate) const USE_CHECK_FN: bool = true;
-const CHUNK_SIZE: usize = core::mem::size_of::<uint8x16_t>();
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
