@@ -74,7 +74,7 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
 
         let valid_letter = vorrq_u8(valid_lower, valid_upper);
         let valid_mask = vorrq_u8(valid_digit, valid_letter);
-        vminvq_u8(valid_mask) == 0xFF
+        vmaxvq_u8(valid_mask) == 0
     })
 }
 
