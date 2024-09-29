@@ -9,7 +9,6 @@ use core::arch::x86::*;
 use core::arch::x86_64::*;
 
 pub(crate) const USE_CHECK_FN: bool = true;
-const CHUNK_SIZE_SSE: usize = core::mem::size_of::<__m128i>();
 const CHUNK_SIZE_AVX: usize = core::mem::size_of::<__m256i>();
 
 cfg_if::cfg_if! {
@@ -38,7 +37,7 @@ cfg_if::cfg_if! {
 
 #[inline]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
-    if !has_ssse3() || input.len() < CHUNK_SIZE_SSE {
+    if !has_ssse3() {
         return generic::encode::<UPPER>(input, output);
     }
     encode_ssse3::<UPPER>(input, output);
@@ -105,7 +104,7 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
 
 #[inline]
 pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
-    if !has_avx2() || input.len() < CHUNK_SIZE_AVX {
+    if !has_avx2() {
         return generic::decode_unchecked(input, output);
     }
     decode_avx2(input, output);

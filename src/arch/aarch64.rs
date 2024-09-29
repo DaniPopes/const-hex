@@ -23,7 +23,7 @@ cfg_if::cfg_if! {
 
 #[inline]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
-    if cfg!(miri) || !has_neon() || input.len() < CHUNK_SIZE {
+    if cfg!(miri) || !has_neon() {
         return generic::encode::<UPPER>(input, output);
     }
     encode_neon::<UPPER>(input, output);
