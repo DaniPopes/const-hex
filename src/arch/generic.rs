@@ -33,6 +33,19 @@ pub(crate) const fn check(mut input: &[u8]) -> bool {
     true
 }
 
+/// Runs the given check function on unaligned chunks of `T` in `input`, with the remainder passed
+/// to the generic [`check`].
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn check_unaligned_chunks<T: Copy>(
+    input: &[u8],
+    mut check_chunk: impl FnMut(T) -> bool,
+) -> bool {
+    let mut chunks = input.chunks_exact(core::mem::size_of::<T>());
+    chunks.all(|chunk| check_chunk(unsafe { chunk.as_ptr().cast::<T>().read_unaligned() }))
+        && check(chunks.remainder())
+}
+
 /// Default checked decoding function.
 ///
 /// # Safety

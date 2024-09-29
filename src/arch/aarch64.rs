@@ -65,7 +65,7 @@ pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: *mut u
 
 #[inline]
 pub(crate) fn check(input: &[u8]) -> bool {
-    if cfg!(miri) || !has_neon() || input.len() < CHUNK_SIZE {
+    if cfg!(miri) || !has_neon() {
         return generic::check(input);
     }
     unsafe { check_neon(input) }
@@ -80,26 +80,23 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
     let ascii_la = vdupq_n_u8(b'a' - 1);
     let ascii_lf = vdupq_n_u8(b'f' + 1);
 
-    let (prefix, chunks, suffix) = input.align_to::<uint8x16_t>();
-    generic::check(prefix)
-        && chunks.iter().all(|&chunk| {
-            let ge0 = vcgtq_u8(chunk, ascii_zero);
-            let le9 = vcltq_u8(chunk, ascii_nine);
-            let valid_digit = vandq_u8(ge0, le9);
+    generic::check_unaligned_chunks(input, |chunk| {
+        let ge0 = vcgtq_u8(chunk, ascii_zero);
+        let le9 = vcltq_u8(chunk, ascii_nine);
+        let valid_digit = vandq_u8(ge0, le9);
 
-            let geua = vcgtq_u8(chunk, ascii_ua);
-            let leuf = vcltq_u8(chunk, ascii_uf);
-            let valid_upper = vandq_u8(geua, leuf);
+        let geua = vcgtq_u8(chunk, ascii_ua);
+        let leuf = vcltq_u8(chunk, ascii_uf);
+        let valid_upper = vandq_u8(geua, leuf);
 
-            let gela = vcgtq_u8(chunk, ascii_la);
-            let lelf = vcltq_u8(chunk, ascii_lf);
-            let valid_lower = vandq_u8(gela, lelf);
+        let gela = vcgtq_u8(chunk, ascii_la);
+        let lelf = vcltq_u8(chunk, ascii_lf);
+        let valid_lower = vandq_u8(gela, lelf);
 
-            let valid_letter = vorrq_u8(valid_lower, valid_upper);
-            let valid_mask = vorrq_u8(valid_digit, valid_letter);
-            vminvq_u8(valid_mask) == 0xFF
-        })
-        && generic::check(suffix)
+        let valid_letter = vorrq_u8(valid_lower, valid_upper);
+        let valid_mask = vorrq_u8(valid_digit, valid_letter);
+        vminvq_u8(valid_mask) == 0xFF
+    })
 }
 
 pub(crate) use generic::decode_checked;

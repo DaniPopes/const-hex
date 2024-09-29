@@ -666,7 +666,7 @@ const unsafe fn invalid_hex_error(input: &[u8]) -> FromHexError {
             if cfg!(debug_assertions) {
                 panic!("input was valid but `check` failed")
             } else {
-                core::hint::unreachable_unchecked()
+                unsafe { core::hint::unreachable_unchecked() }
             }
         }
     };

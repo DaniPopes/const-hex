@@ -83,7 +83,7 @@ unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: *mut u8) {
 
 #[inline]
 pub(crate) fn check(input: &[u8]) -> bool {
-    if !has_sse2() || input.len() < CHUNK_SIZE_SSE {
+    if !has_sse2() {
         return generic::check(input);
     }
     unsafe { check_sse2(input) }
@@ -99,26 +99,23 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
     let ascii_la = _mm_set1_epi8((b'a' - 1) as i8);
     let ascii_lf = _mm_set1_epi8((b'f' + 1) as i8);
 
-    let (prefix, chunks, suffix) = input.align_to::<__m128i>();
-    generic::check(prefix)
-        && chunks.iter().all(|&chunk| {
-            let ge0 = _mm_cmpgt_epi8(chunk, ascii_zero);
-            let le9 = _mm_cmplt_epi8(chunk, ascii_nine);
-            let valid_digit = _mm_and_si128(ge0, le9);
+    generic::check_unaligned_chunks(input, |chunk| {
+        let ge0 = _mm_cmpgt_epi8(chunk, ascii_zero);
+        let le9 = _mm_cmplt_epi8(chunk, ascii_nine);
+        let valid_digit = _mm_and_si128(ge0, le9);
 
-            let geua = _mm_cmpgt_epi8(chunk, ascii_ua);
-            let leuf = _mm_cmplt_epi8(chunk, ascii_uf);
-            let valid_upper = _mm_and_si128(geua, leuf);
+        let geua = _mm_cmpgt_epi8(chunk, ascii_ua);
+        let leuf = _mm_cmplt_epi8(chunk, ascii_uf);
+        let valid_upper = _mm_and_si128(geua, leuf);
 
-            let gela = _mm_cmpgt_epi8(chunk, ascii_la);
-            let lelf = _mm_cmplt_epi8(chunk, ascii_lf);
-            let valid_lower = _mm_and_si128(gela, lelf);
+        let gela = _mm_cmpgt_epi8(chunk, ascii_la);
+        let lelf = _mm_cmplt_epi8(chunk, ascii_lf);
+        let valid_lower = _mm_and_si128(gela, lelf);
 
-            let valid_letter = _mm_or_si128(valid_lower, valid_upper);
-            let valid_mask = _mm_movemask_epi8(_mm_or_si128(valid_digit, valid_letter));
-            valid_mask == 0xffff
-        })
-        && generic::check(suffix)
+        let valid_letter = _mm_or_si128(valid_lower, valid_upper);
+        let valid_mask = _mm_movemask_epi8(_mm_or_si128(valid_digit, valid_letter));
+        valid_mask == 0xffff
+    })
 }
 
 #[inline]
