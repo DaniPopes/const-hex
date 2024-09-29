@@ -719,7 +719,7 @@ pub mod fuzzing {
     use super::*;
     use proptest::test_runner::TestCaseResult;
     use proptest::{prop_assert, prop_assert_eq};
-    use std::io::Write;
+    use std::fmt::Write;
 
     pub fn fuzz(data: &[u8]) -> TestCaseResult {
         self::encode(&data)?;
@@ -754,11 +754,11 @@ pub mod fuzzing {
     }
 
     fn mk_expected(bytes: &[u8]) -> String {
-        let mut s = Vec::with_capacity(bytes.len() * 2);
+        let mut s = String::with_capacity(bytes.len() * 2);
         for i in bytes {
             write!(s, "{i:02x}").unwrap();
         }
-        unsafe { String::from_utf8_unchecked(s) }
+        s
     }
 
     fn test_buffer<const N: usize, const LEN: usize>(bytes: &[u8]) -> TestCaseResult {

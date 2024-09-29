@@ -32,16 +32,17 @@ pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy>(
     mut encode_chunk: impl FnMut(T) -> (T, T),
 ) {
     let (chunks, remainder) = chunks_unaligned::<T>(input);
-    let remainder_i = chunks.len() * core::mem::size_of::<T>();
+    let n_in_chunks = chunks.len();
     let chunk_output = output.cast::<T>();
     for (i, chunk) in chunks.enumerate() {
         let (lo, hi) = encode_chunk(chunk);
         unsafe {
             chunk_output.add(i * 2).write_unaligned(lo);
-            chunk_output.add((i * 2) + 1).write_unaligned(hi);
+            chunk_output.add(i * 2 + 1).write_unaligned(hi);
         }
     }
-    unsafe { encode::<UPPER>(remainder, unsafe { output.add(remainder_i) }) };
+    let n_out_chunks = n_in_chunks * 2;
+    unsafe { encode::<UPPER>(remainder, unsafe { chunk_output.add(n_out_chunks).cast() }) };
 }
 
 /// Default check function.
