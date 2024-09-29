@@ -44,16 +44,13 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 }
 
 pub(crate) fn check(input: &[u8]) -> bool {
-    let (prefix, chunks, suffix) = input.as_simd::<CHUNK_SIZE>();
-    generic::check(prefix)
-        && chunks.iter().all(|&chunk| {
-            let valid_digit = chunk.simd_ge(Simd::splat(b'0')) & chunk.simd_le(Simd::splat(b'9'));
-            let valid_upper = chunk.simd_ge(Simd::splat(b'A')) & chunk.simd_le(Simd::splat(b'F'));
-            let valid_lower = chunk.simd_ge(Simd::splat(b'a')) & chunk.simd_le(Simd::splat(b'f'));
-            let valid = valid_digit | valid_upper | valid_lower;
-            valid.all()
-        })
-        && generic::check(suffix)
+    generic::check_unaligned_chunks::<Simd>(input, |chunk| {
+        let valid_digit = chunk.simd_ge(Simd::splat(b'0')) & chunk.simd_le(Simd::splat(b'9'));
+        let valid_upper = chunk.simd_ge(Simd::splat(b'A')) & chunk.simd_le(Simd::splat(b'F'));
+        let valid_lower = chunk.simd_ge(Simd::splat(b'a')) & chunk.simd_le(Simd::splat(b'f'));
+        let valid = valid_digit | valid_upper | valid_lower;
+        valid.all()
+    })
 }
 
 pub(crate) use generic::decode_checked;

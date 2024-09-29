@@ -39,7 +39,7 @@ macro_rules! benches {
                     #[bench]
                     fn $name(b: &mut Bencher) {
                         b.iter(|| {
-                            ::const_hex::check(black_box($dec))
+                            ::const_hex::check_raw(black_box($dec))
                         });
                     }
                 )*
