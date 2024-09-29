@@ -20,8 +20,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [aarch64-unknown-linux-gnu, i686-unknown-linux-gnu, x86_64-unknown-linux-gnu]
+        target:
+          - aarch64-unknown-linux-gnu
+          - i686-unknown-linux-gnu
+          - x86_64-unknown-linux-gnu
+          - wasm32-wasip1
         rust: [nightly, stable, 1.64]
+        exclude:
+          - target: wasm32-wasip1
+            rust: 1.64
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

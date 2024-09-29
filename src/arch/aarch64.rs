@@ -80,7 +80,7 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
     let ascii_la = vdupq_n_u8(b'a' - 1);
     let ascii_lf = vdupq_n_u8(b'f' + 1);
 
-    generic::check_unaligned_chunks(input, |chunk| {
+    generic::check_unaligned_chunks(input, |chunk: uint8x16_t| {
         let ge0 = vcgtq_u8(chunk, ascii_zero);
         let le9 = vcltq_u8(chunk, ascii_nine);
         let valid_digit = vandq_u8(ge0, le9);

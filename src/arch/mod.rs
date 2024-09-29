@@ -13,6 +13,9 @@ cfg_if::cfg_if! {
     } else if #[cfg(target_arch = "aarch64")] {
         pub(crate) mod aarch64;
         pub(crate) use aarch64 as imp;
+    } else if #[cfg(target_arch = "wasm32")] {
+        pub(crate) mod wasm32;
+        pub(crate) use wasm32 as imp;
     } else {
         pub(crate) use generic as imp;
     }
