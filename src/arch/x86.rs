@@ -99,7 +99,7 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
     let ascii_la = _mm_set1_epi8((b'a' - 1) as i8);
     let ascii_lf = _mm_set1_epi8((b'f' + 1) as i8);
 
-    generic::check_unaligned_chunks(input, |chunk| {
+    generic::check_unaligned_chunks(input, |chunk: __m128i| {
         let ge0 = _mm_cmpgt_epi8(chunk, ascii_zero);
         let le9 = _mm_cmplt_epi8(chunk, ascii_nine);
         let valid_digit = _mm_and_si128(ge0, le9);

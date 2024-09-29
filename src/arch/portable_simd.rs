@@ -44,7 +44,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 }
 
 pub(crate) fn check(input: &[u8]) -> bool {
-    generic::check_unaligned_chunks::<Simd>(input, |chunk| {
+    generic::check_unaligned_chunks(input, |chunk: Simd| {
         let valid_digit = chunk.simd_ge(Simd::splat(b'0')) & chunk.simd_le(Simd::splat(b'9'));
         let valid_upper = chunk.simd_ge(Simd::splat(b'A')) & chunk.simd_le(Simd::splat(b'F'));
         let valid_lower = chunk.simd_ge(Simd::splat(b'a')) & chunk.simd_le(Simd::splat(b'f'));
