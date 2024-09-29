@@ -21,18 +21,18 @@ jobs:
       matrix:
         target:
           - triple: aarch64-unknown-linux-gnu
-            feature: +neon
+            feature: neon
           - triple: i686-unknown-linux-gnu
-            feature: +avx2
+            feature: avx2
           - triple: x86_64-unknown-linux-gnu
-            feature: +avx2
+            feature: avx2
           - triple: wasm32-wasip1
-            feature: +simd128
+            feature: simd128
         rust: [nightly, stable, 1.64]
         exclude:
           - target:
               triple: wasm32-wasip1
-              feature: +simd128
+              feature: simd128
             rust: 1.64
     timeout-minutes: 30
     steps:
@@ -50,9 +50,22 @@ jobs:
         if: matrix.rust == 'nightly'
 
       - name: Enable target feature
-        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Ctarget-feature=${{ matrix.target.feature }} >> $GITHUB_ENV
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Ctarget-feature=+${{ matrix.target.feature }} >> $GITHUB_ENV
 
       - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build
+      - run: cargo build --no-default-features
+      - run: cargo test
+      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --features force-generic
+      - run: cargo test --no-default-features --features nightly,portable-simd
+        if: matrix.rust == 'nightly'
+      - run: cargo bench --no-run
+        if: matrix.rust == 'nightly'
+
+      - name: Disable target feature
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Ctarget-feature=-${{ matrix.target.feature }} >> $GITHUB_ENV
 
       - run: cargo build
       - run: cargo build --no-default-features
