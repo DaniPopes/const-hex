@@ -30,6 +30,12 @@ jobs:
             feature: simd128
         rust: [nightly, stable, 1.64]
         exclude:
+          # https://github.com/rust-lang/rust/issues/131031
+          - target:
+              triple: wasm32-wasip1
+              feature: simd128
+            rust: nightly
+          # In 1.64 it's still called wasm32-wasi
           - target:
               triple: wasm32-wasip1
               feature: simd128

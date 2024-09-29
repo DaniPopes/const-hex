@@ -59,24 +59,17 @@ pub(crate) fn check(input: &[u8]) -> bool {
 
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
-    let ascii_zero = vdupq_n_u8(b'0' - 1);
-    let ascii_nine = vdupq_n_u8(b'9' + 1);
-    let ascii_ua = vdupq_n_u8(b'A' - 1);
-    let ascii_uf = vdupq_n_u8(b'F' + 1);
-    let ascii_la = vdupq_n_u8(b'a' - 1);
-    let ascii_lf = vdupq_n_u8(b'f' + 1);
-
     generic::check_unaligned_chunks(input, |chunk: uint8x16_t| {
-        let ge0 = vcgtq_u8(chunk, ascii_zero);
-        let le9 = vcltq_u8(chunk, ascii_nine);
+        let ge0 = vcgeq_u8(chunk, vdupq_n_u8(b'0'));
+        let le9 = vcleq_u8(chunk, vdupq_n_u8(b'9'));
         let valid_digit = vandq_u8(ge0, le9);
 
-        let geua = vcgtq_u8(chunk, ascii_ua);
-        let leuf = vcltq_u8(chunk, ascii_uf);
+        let geua = vcgeq_u8(chunk, vdupq_n_u8(b'A'));
+        let leuf = vcleq_u8(chunk, vdupq_n_u8(b'F'));
         let valid_upper = vandq_u8(geua, leuf);
 
-        let gela = vcgtq_u8(chunk, ascii_la);
-        let lelf = vcltq_u8(chunk, ascii_lf);
+        let gela = vcgeq_u8(chunk, vdupq_n_u8(b'a'));
+        let lelf = vcleq_u8(chunk, vdupq_n_u8(b'f'));
         let valid_lower = vandq_u8(gela, lelf);
 
         let valid_letter = vorrq_u8(valid_lower, valid_upper);

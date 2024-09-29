@@ -65,11 +65,11 @@ pub(crate) fn check(input: &[u8]) -> bool {
     if !has_simd128() {
         return generic::check(input);
     }
-    unsafe { check_simd128(input) }
+    check_simd128(input)
 }
 
 #[target_feature(enable = "simd128")]
-unsafe fn check_simd128(input: &[u8]) -> bool {
+fn check_simd128(input: &[u8]) -> bool {
     generic::check_unaligned_chunks(input, |chunk: v128| {
         let ge0 = u8x16_ge(chunk, u8x16_splat(b'0'));
         let le9 = u8x16_le(chunk, u8x16_splat(b'9'));
