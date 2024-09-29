@@ -5,7 +5,6 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
-  schedule: [cron: "40 1 * * *"]
 
 permissions:
   contents: read
@@ -15,19 +14,25 @@ env:
 
 jobs:
   test:
-    name: Test
+    name: Test +${{ matrix.rust }} ${{ matrix.target.triple }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         target:
-          - aarch64-unknown-linux-gnu
-          - i686-unknown-linux-gnu
-          - x86_64-unknown-linux-gnu
-          - wasm32-wasip1
+          - triple: aarch64-unknown-linux-gnu
+            feature: +neon
+          - triple: i686-unknown-linux-gnu
+            feature: +avx2
+          - triple: x86_64-unknown-linux-gnu
+            feature: +avx2
+          - triple: wasm32-wasip1
+            feature: +simd128
         rust: [nightly, stable, 1.64]
         exclude:
-          - target: wasm32-wasip1
+          - target:
+              triple: wasm32-wasip1
+              feature: +simd128
             rust: 1.64
     timeout-minutes: 30
     steps:
@@ -35,14 +40,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-          target: ${{ matrix.target }}
+          target: ${{ matrix.target.triple }}
       - uses: taiki-e/setup-cross-toolchain-action@v1
         with:
-          target: ${{ matrix.target }}
+          target: ${{ matrix.target.triple }}
 
       - name: Enable type layout randomization
         run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
         if: matrix.rust == 'nightly'
+
+      - name: Enable target feature
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Ctarget-feature=${{ matrix.target.feature }} >> $GITHUB_ENV
 
       - uses: Swatinem/rust-cache@v2
 
