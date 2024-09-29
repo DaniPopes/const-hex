@@ -4,7 +4,7 @@ use super::generic;
 use crate::get_chars_table;
 use core::arch::wasm32::*;
 
-pub(crate) const USE_CHECK_FN: bool = false;
+pub(crate) const USE_CHECK_FN: bool = true;
 
 #[inline(always)]
 fn has_simd128() -> bool {

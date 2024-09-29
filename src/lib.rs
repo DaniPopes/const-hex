@@ -609,6 +609,8 @@ fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
 /// Assumes `output.len() == input.len() / 2`.
 #[inline]
 unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+    debug_assert_eq!(output.len(), input.len() / 2);
+
     if imp::USE_CHECK_FN {
         // check then decode
         if imp::check(input) {
@@ -628,7 +630,7 @@ unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
 #[inline]
 const fn byte2hex<const UPPER: bool>(byte: u8) -> (u8, u8) {
     let table = get_chars_table::<UPPER>();
-    let high = table[((byte & 0xf0) >> 4) as usize];
+    let high = table[(byte >> 4) as usize];
     let low = table[(byte & 0x0f) as usize];
     (high, low)
 }
