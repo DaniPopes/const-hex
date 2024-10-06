@@ -118,6 +118,19 @@ macro_rules! benches {
                     }
                 )*
             }
+
+            mod rustc_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::rustc_hex::FromHex::from_hex::<Vec<_>>(black_box($dec))
+                        });
+                    }
+                )*
+            }
         }
 
         mod decode_to_slice {
@@ -205,6 +218,19 @@ macro_rules! benches {
                     fn $name(b: &mut Bencher) {
                         b.iter(|| {
                             ::hex::encode(black_box($enc))
+                        });
+                    }
+                )*
+            }
+
+            mod rustc_hex {
+                use super::*;
+
+                $(
+                    #[bench]
+                    fn $name(b: &mut Bencher) {
+                        b.iter(|| {
+                            ::rustc_hex::ToHex::to_hex::<String>(&black_box($enc)[..])
                         });
                     }
                 )*
