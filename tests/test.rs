@@ -214,3 +214,22 @@ fn assert_upper(s: &str) {
     assert_eq!(ALL_UPPER, expected);
     assert_eq!(s, expected);
 }
+
+#[cfg(feature = "alloc")]
+#[test]
+fn test_is_zeroes() {
+    // Test with standard zero-only strings
+    assert!(const_hex::is_zeroes("00000000"));
+    assert!(const_hex::is_zeroes("0x00000000"));
+    assert!(const_hex::is_zeroes("00000000000000000000000000000000"));
+    assert!(const_hex::is_zeroes("0x00000000000000000000000000000000"));
+
+    // Test with non-zero hex strings
+    assert!(!const_hex::is_zeroes("00000001"));
+    assert!(!const_hex::is_zeroes("0x00000001"));
+    assert!(!const_hex::is_zeroes("1234567890abcdef"));
+    assert!(!const_hex::is_zeroes("0x1234567890abcdef"));
+
+    // Test with empty string (could be considered as not zeroes)
+    assert!(!const_hex::is_zeroes(""));
+}
