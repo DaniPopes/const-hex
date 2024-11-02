@@ -627,6 +627,40 @@ unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
     Err(unsafe { invalid_hex_error(input) })
 }
 
+/// Checks if a hex string contains only zeros ('0' characters).
+///
+/// Both uppercase and lowercase hex strings are supported, and can be mixed.
+/// The '0x' prefix is automatically stripped if present.
+///
+/// Returns true only if the entire string (after removing any '0x' prefix)
+/// consists of '0' characters. Returns false if any non-zero hex digit is found.
+///
+/// # Example
+///
+/// ```
+/// assert!(const_hex::is_zeroes("000000"));
+/// assert!(const_hex::is_zeroes("0x000000"));
+///
+/// assert!(!const_hex::is_zeroes("100000"));
+/// assert!(!const_hex::is_zeroes("0x100000"));
+/// assert!(!const_hex::is_zeroes("000100"));
+/// assert!(!const_hex::is_zeroes(""));
+/// ```
+#[cfg(feature = "alloc")]
+#[inline]
+pub fn is_zeroes(hex: &str) -> bool {
+    if hex.is_empty() {
+        return false;
+    }
+    let bytes = strip_prefix(hex.as_bytes());
+    for &b in bytes {
+        if b != b'0' {
+            return false;
+        }
+    }
+    true
+}
+
 #[inline]
 const fn byte2hex<const UPPER: bool>(byte: u8) -> (u8, u8) {
     let table = get_chars_table::<UPPER>();
