@@ -6,21 +6,9 @@ use core::arch::wasm32::*;
 
 pub(crate) const USE_CHECK_FN: bool = true;
 
-#[inline(always)]
-fn has_simd128() -> bool {
-    cfg!(target_feature = "simd128")
-}
-
 #[inline]
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
-    if !has_simd128() {
-        return generic::encode::<UPPER>(input, output);
-    }
-    encode_simd128::<UPPER>(input, output)
-}
-
 #[target_feature(enable = "simd128")]
-unsafe fn encode_simd128<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
     // Load table.
     let hex_table = v128_load(get_chars_table::<UPPER>().as_ptr().cast());
 
@@ -61,15 +49,8 @@ unsafe fn encode_simd128<const UPPER: bool>(input: &[u8], output: *mut u8) {
 }
 
 #[inline]
-pub(crate) fn check(input: &[u8]) -> bool {
-    if !has_simd128() {
-        return generic::check(input);
-    }
-    check_simd128(input)
-}
-
 #[target_feature(enable = "simd128")]
-fn check_simd128(input: &[u8]) -> bool {
+pub(crate) fn check(input: &[u8]) -> bool {
     generic::check_unaligned_chunks(input, |chunk: v128| {
         let ge0 = u8x16_ge(chunk, u8x16_splat(b'0'));
         let le9 = u8x16_le(chunk, u8x16_splat(b'9'));

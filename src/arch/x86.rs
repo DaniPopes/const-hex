@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+#![allow(unexpected_cfgs)]
 
 use super::generic;
 use crate::get_chars_table;
