@@ -21,7 +21,9 @@ pub enum FromHexError {
     InvalidStringLength,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "core-error")]
+impl core::error::Error for FromHexError {}
+#[cfg(all(feature = "std", not(feature = "core-error")))]
 impl std::error::Error for FromHexError {}
 
 impl fmt::Display for FromHexError {

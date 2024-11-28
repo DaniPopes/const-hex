@@ -42,6 +42,10 @@ default = ["std"]
 std = ["hex?/std", "serde?/std", "proptest?/std", "alloc"]
 alloc = ["hex?/alloc", "serde?/alloc", "proptest?/alloc"]
 
+# Enables `core::error::Error` implementations always instead of conditionally through `std`.
+# Requires Rust 1.81 or newer.
+core-error = []
+
 # Serde support. Use with `#[serde(with = "const_hex")]`.
 serde = ["hex?/serde", "dep:serde"]
 
