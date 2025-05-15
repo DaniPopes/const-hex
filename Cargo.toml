@@ -1,6 +1,6 @@
 [package]
 name = "const-hex"
-version = "1.14.0"
+version = "1.14.1"
 authors = ["DaniPopes <57450786+DaniPopes@users.noreply.github.com>"]
 description = "Fast byte array to hex string conversion"
 edition = "2021"
