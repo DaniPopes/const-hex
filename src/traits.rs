@@ -11,9 +11,12 @@ use alloc::{
     boxed::Box,
     rc::Rc,
     string::String,
-    sync::Arc,
     vec::Vec,
 };
+
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+#[allow(unused_imports)]
+use alloc::sync::Arc;
 
 /// Encoding values as hex string.
 ///
@@ -205,7 +208,7 @@ impl<T: FromHex> FromHex for Rc<T> {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
 impl<T: FromHex> FromHex for Arc<T> {
     type Error = T::Error;
 
