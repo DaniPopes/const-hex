@@ -145,7 +145,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
         // we only write only ASCII bytes.
         unsafe {
             let buf = self.as_mut_bytes();
-            let output = buf.as_mut_ptr().add(PREFIX as usize * 2);
+            let output = buf.get_unchecked_mut(PREFIX as usize * 2..);
             imp::encode::<UPPER>(input, output);
             str::from_utf8_unchecked_mut(buf)
         }

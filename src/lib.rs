@@ -565,13 +565,13 @@ fn encode_inner<const UPPER: bool, const PREFIX: bool>(data: &[u8]) -> String {
     unsafe {
         buf.set_len(capacity)
     };
-    let mut output = buf.as_mut_ptr();
+    let mut output = buf.as_mut_slice();
     if PREFIX {
         // SAFETY: `output` is long enough.
         unsafe {
-            output.add(0).write(b'0');
-            output.add(1).write(b'x');
-            output = output.add(2);
+            *output.get_unchecked_mut(0) = b'0';
+            *output.get_unchecked_mut(1) = b'x';
+            output = output.get_unchecked_mut(2..);
         }
     }
     // SAFETY: `output` is long enough (input.len() * 2).
@@ -588,7 +588,7 @@ fn encode_to_slice_inner<const UPPER: bool>(
         return Err(FromHexError::InvalidStringLength);
     }
     // SAFETY: Lengths are checked above.
-    unsafe { imp::encode::<UPPER>(input, output.as_mut_ptr()) };
+    unsafe { imp::encode::<UPPER>(input, output) };
     Ok(())
 }
 
@@ -612,13 +612,13 @@ unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
     debug_assert_eq!(output.len(), input.len() / 2);
 
     if imp::USE_CHECK_FN {
-        // check then decode
+        // Check then decode.
         if imp::check(input) {
             unsafe { imp::decode_unchecked(input, output) };
             return Ok(());
         }
     } else {
-        // check and decode at the same time
+        // Check and decode at the same time.
         if unsafe { imp::decode_checked(input, output) } {
             return Ok(());
         }
