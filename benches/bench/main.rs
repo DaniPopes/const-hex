@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 use divan::Bencher;
 use std::fmt;
 use std::hint::black_box;
@@ -41,6 +43,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod faster_hex {
                 use super::*;
 
@@ -54,6 +57,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod naive {
                 use super::*;
 
@@ -86,6 +90,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod faster_hex {
                 use super::*;
 
@@ -102,6 +107,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod hex {
                 use super::*;
 
@@ -115,6 +121,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod rustc_hex {
                 use super::*;
 
@@ -147,6 +154,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod faster_hex {
                 use super::*;
 
@@ -161,6 +169,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod hex {
                 use super::*;
 
@@ -193,6 +202,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod faster_hex {
                 use super::*;
 
@@ -206,6 +216,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod hex {
                 use super::*;
 
@@ -219,6 +230,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod rustc_hex {
                 use super::*;
 
@@ -250,6 +262,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod faster_hex {
                 use super::*;
 
@@ -264,6 +277,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod hex {
                 use super::*;
 
@@ -297,6 +311,7 @@ macro_rules! benches {
                 )*
             }
 
+            #[cfg(not(codspeed))]
             mod std {
                 use super::*;
 

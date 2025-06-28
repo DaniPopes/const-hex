@@ -36,7 +36,7 @@ rustc-hex = "2.1"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
-divan = "0.1"
+divan = { package = "codspeed-divan-compat", version = "2" }
 
 [features]
 default = ["std"]
@@ -67,6 +67,24 @@ nightly = []
 
 # Internal features.
 __fuzzing = ["dep:proptest", "std"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+debug = false
+strip = "debuginfo" # "symbols" for less binary size but no backtraces
+panic = "abort"
+codegen-units = 16
+
+# Use the `--profile profiling` flag to show symbols in release mode.
+# e.g. `cargo build --profile profiling`
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+
+[profile.bench]
+inherits = "profiling"
 
 [[bench]]
 path = "benches/bench/main.rs"
