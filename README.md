@@ -30,8 +30,7 @@ This crate is 10 to 50 times faster than [`hex`] in encoding and decoding, and
 The following benchmarks were ran on an AMD Ryzen 9 7950X, compiled with
 `1.83.0-nightly (9ff5fc4ff 2024-10-03)` on `x86_64-unknown-linux-gnu`.
 
-You can run these benchmarks with `cargo bench --features std` on a nightly
-compiler.
+You can run these benchmarks with `cargo bench`.
 
 ```log
 test check::const_hex::bench1_32b             ... bench:           3.07 ns/iter (+/- 0.62)
