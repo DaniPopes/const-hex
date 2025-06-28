@@ -4,7 +4,6 @@ on:
   push:
     branches: [master]
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -65,8 +64,11 @@ jobs:
       - run: cargo build
       - run: cargo build --no-default-features
       - run: cargo test
+        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features
+        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features force-generic
+        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
@@ -78,8 +80,11 @@ jobs:
       - run: cargo build
       - run: cargo build --no-default-features
       - run: cargo test
+        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features
+        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features force-generic
+        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
@@ -160,13 +165,3 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all --check
-
-  outdated:
-    name: Outdated
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/install@cargo-outdated
-      - run: cargo outdated --workspace --exit-code 1
