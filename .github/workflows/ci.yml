@@ -70,7 +70,7 @@ jobs:
       - run: cargo test --no-default-features --features nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
-        if: matrix.rust == 'nightly'
+        if: matrix.rust != '1.64'
 
       - name: Disable target feature
         run: echo RUSTFLAGS=${RUSTFLAGS_BAK}\ -Ctarget-feature=-${{ matrix.target.feature }} >> $GITHUB_ENV
@@ -83,7 +83,7 @@ jobs:
       - run: cargo test --no-default-features --features nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
-        if: matrix.rust == 'nightly'
+        if: matrix.rust != '1.64'
 
   miri:
     name: Miri

@@ -1,4 +1,5 @@
 #![allow(unexpected_cfgs)]
+#![allow(clippy::incompatible_msrv)]
 
 use divan::Bencher;
 use std::fmt;
