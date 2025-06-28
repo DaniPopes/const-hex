@@ -1,13 +1,9 @@
-#![feature(test)]
-
-extern crate test;
-
-#[rustfmt::skip]
-mod data;
-
+use divan::Bencher;
 use std::fmt;
+use std::hint::black_box;
 use std::io::Write;
-use test::{black_box, Bencher};
+
+mod data;
 
 struct HexBufferFormat<const N: usize>(&'static [u8; N]);
 impl<const N: usize> fmt::Display for HexBufferFormat<N> {
@@ -36,9 +32,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::const_hex::check_raw(black_box($dec))
                         });
                     }
@@ -49,9 +45,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::faster_hex::hex_check(black_box($dec.as_bytes()))
                         });
                     }
@@ -62,9 +58,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             let dec = black_box($dec.as_bytes());
                             dec.iter().all(u8::is_ascii_hexdigit)
                         });
@@ -81,9 +77,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::const_hex::decode(black_box($dec))
                         });
                     }
@@ -94,9 +90,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             const L: usize = $dec.len() / 2;
                             let mut buf = vec![0; L];
                             ::faster_hex::hex_decode(black_box($dec.as_bytes()), black_box(&mut buf)).unwrap();
@@ -110,9 +106,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::hex::decode(black_box($dec))
                         });
                     }
@@ -123,9 +119,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::rustc_hex::FromHex::from_hex::<Vec<_>>(black_box($dec))
                         });
                     }
@@ -140,10 +136,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let buf = &mut [0; $dec.len() / 2];
-                        b.iter(|| {
+                        b.bench_local(|| {
                             let res = ::const_hex::decode_to_slice(black_box($dec), black_box(buf));
                             black_box(res.unwrap());
                         });
@@ -155,10 +151,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let buf = &mut [0; $dec.len() / 2];
-                        b.iter(|| {
+                        b.bench_local(|| {
                             ::faster_hex::hex_decode(black_box($dec.as_bytes()), black_box(buf))
                         })
                     }
@@ -169,10 +165,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let buf = &mut [0; $dec.len() / 2];
-                        b.iter(|| {
+                        b.bench_local(|| {
                             ::hex::decode_to_slice(black_box($dec), black_box(buf))
                         });
                     }
@@ -188,9 +184,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::const_hex::encode(black_box($enc))
                         });
                     }
@@ -201,9 +197,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::faster_hex::hex_string(black_box($enc))
                         });
                     }
@@ -214,9 +210,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::hex::encode(black_box($enc))
                         });
                     }
@@ -227,9 +223,9 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
-                        b.iter(|| {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
                             ::rustc_hex::ToHex::to_hex::<String>(&black_box($enc)[..])
                         });
                     }
@@ -244,10 +240,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let buf = &mut [0; $enc.len() * 2];
-                        b.iter(|| {
+                        b.bench_local(|| {
                             ::const_hex::encode_to_slice(black_box($enc), black_box(buf))
                         });
                     }
@@ -258,10 +254,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let buf = &mut [0; $enc.len() * 2];
-                        b.iter(|| {
+                        b.bench_local(|| {
                             ::faster_hex::hex_encode(black_box($enc), black_box(buf)).map(drop)
                         });
                     }
@@ -272,10 +268,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let buf = &mut [0; $enc.len() * 2];
-                        b.iter(|| {
+                        b.bench_local(|| {
                             ::hex::encode_to_slice(black_box($enc), black_box(buf))
                         });
                     }
@@ -290,10 +286,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let mut buf = Vec::with_capacity($enc.len() * 2);
-                        b.iter(|| {
+                        b.bench_local(|| {
                             buf.clear();
                             write!(&mut buf, "{}", HexBufferFormat(black_box($enc)))
                         });
@@ -305,10 +301,10 @@ macro_rules! benches {
                 use super::*;
 
                 $(
-                    #[bench]
-                    fn $name(b: &mut Bencher) {
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
                         let mut buf = Vec::with_capacity($enc.len() * 2);
-                        b.iter(|| {
+                        b.bench_local(|| {
                             buf.clear();
                             write!(&mut buf, "{}", StdFormat(black_box($enc)))
                         });
@@ -326,4 +322,8 @@ benches! {
     bench4_16k(data::ENC_16384, data::DEC_16384)
     bench5_128k(data::ENC_131072, data::DEC_131072)
     bench6_1m(data::ENC_1048576, data::DEC_1048576)
+}
+
+fn main() {
+    divan::main();
 }

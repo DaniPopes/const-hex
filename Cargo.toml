@@ -36,6 +36,8 @@ rustc-hex = "2.1"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
+divan = "0.1"
+
 [features]
 default = ["std"]
 std = ["hex?/std", "serde?/std", "proptest?/std", "alloc"]
@@ -56,8 +58,8 @@ hex = ["dep:hex"]
 force-generic = []
 
 # Support for the `portable-simd` nightly feature.
-# Note that `-Zbuild-std` may be necessary to unlock better performance than
-# the specialized implementations.
+# Note that `-Zbuild-std` may be necessary to unlock similar or better
+# performance than the specialized implementations.
 portable-simd = []
 
 # Enables nightly-only features for better performance.
@@ -65,3 +67,8 @@ nightly = []
 
 # Internal features.
 __fuzzing = ["dep:proptest", "std"]
+
+[[bench]]
+path = "benches/bench/main.rs"
+name = "bench"
+harness = false
