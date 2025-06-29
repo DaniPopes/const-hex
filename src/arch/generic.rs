@@ -16,8 +16,8 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) 
     for (i, byte) in input.iter().enumerate() {
         let (high, low) = byte2hex::<UPPER>(*byte);
         unsafe {
-            output[i * 2] = high;
-            output[i * 2 + 1] = low;
+            *output.get_unchecked_mut(i * 2) = high;
+            *output.get_unchecked_mut(i * 2 + 1) = low;
         }
     }
 }

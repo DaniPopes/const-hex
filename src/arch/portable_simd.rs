@@ -37,26 +37,5 @@ pub(crate) fn check(input: &[u8]) -> bool {
     })
 }
 
-// #[inline]
-// pub(crate) unsafe fn decode_unchecked(input: &[u8], output: *mut u8) {
-//     let offset_9 = Simd::splat(9);
-//     let lower_mask = Simd::splat(0x20);
-
-//     generic::decode_unchecked_unaligned_chunks::<Simd>(input, output, |a, b| {
-//         // Convert to lowercase
-//         let v_lower = v | lower_mask;
-
-//         // Subtract '0' to normalize
-//         let normalized = v_lower - Simd::splat(b'0');
-
-//         // For digits (0-9): result is already correct
-//         // For letters (49-54 after subtracting '0'): need to subtract 39 more
-//         let is_alpha = normalized.simd_gt(offset_9);
-//         let adjust = is_alpha.select(Simd::splat(39), Simd::splat(0));
-//         normalized - adjust
-//     });
-// }
-pub(crate) use generic::decode_unchecked;
-
-// Not used.
 pub(crate) use generic::decode_checked;
+pub(crate) use generic::decode_unchecked;
