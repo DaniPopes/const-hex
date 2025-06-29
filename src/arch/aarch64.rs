@@ -21,7 +21,7 @@ cfg_if::cfg_if! {
 }
 
 #[inline]
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
     if cfg!(miri) || !has_neon() {
         return generic::encode::<UPPER>(input, output);
     }
@@ -29,11 +29,11 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: *mut u8) {
 }
 
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: *mut u8) {
+pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
     // Load table.
     let hex_table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
 
-    generic::encode_unaligned_chunks::<UPPER, _>(input, output, |chunk: uint8x16_t| {
+    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: uint8x16_t| {
         // Load input bytes and mask to nibbles.
         let mut lo = vandq_u8(chunk, vdupq_n_u8(0x0F));
         let mut hi = vshrq_n_u8(chunk, 4);
@@ -43,9 +43,7 @@ pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: *mut u
         hi = vqtbl1q_u8(hex_table, hi);
 
         // Interleave the nibbles ([hi[0], lo[0], hi[1], lo[1], ...]).
-        let hex_lo = vzip1q_u8(hi, lo);
-        let hex_hi = vzip2q_u8(hi, lo);
-        (hex_lo, hex_hi)
+        vzipq_u8(hi, lo)
     });
 }
 
