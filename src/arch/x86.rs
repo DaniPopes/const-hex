@@ -2,7 +2,7 @@
 #![allow(unexpected_cfgs)]
 
 use super::generic;
-use crate::get_chars_table;
+use crate::{get_chars_table, Output};
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
@@ -33,7 +33,7 @@ cfg_if::cfg_if! {
 // themselves taken from [`zbjornson/fast-hex`](https://github.com/zbjornson/fast-hex/blob/a3487bca95127634a61bfeae8f8bfc8f0e5baa3f/src/hex.cc).
 
 #[inline]
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
     if !has_avx2() {
         return generic::encode::<UPPER>(input, output);
     }
@@ -42,7 +42,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) 
 
 #[inline(never)]
 #[target_feature(enable = "avx2")]
-unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
+unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
     generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |av: __m128i| {
         let nibs = byte2nib(av);
         hex::<UPPER>(nibs)

@@ -71,6 +71,9 @@ pub mod traits;
 #[cfg(feature = "alloc")]
 pub use traits::ToHexExt;
 
+mod display;
+pub use display::display;
+
 // If the `hex` feature is enabled, re-export the `hex` crate's traits.
 // Otherwise, use our own with the more optimized implementation.
 cfg_if! {
@@ -127,6 +130,9 @@ cfg_if! {
 
 mod buffer;
 pub use buffer::Buffer;
+
+mod output;
+use output::Output;
 
 /// The table of lowercase characters used for hex encoding.
 pub const HEX_CHARS_LOWER: &[u8; 16] = b"0123456789abcdef";

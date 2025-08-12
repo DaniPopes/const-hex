@@ -1,4 +1,4 @@
-use crate::{byte2hex, HEX_DECODE_LUT, NIL};
+use crate::{byte2hex, Output, HEX_DECODE_LUT, NIL};
 use core::mem::size_of;
 
 /// Set to `true` to use `check` + `decode_unchecked` for decoding. Otherwise uses `decode_checked`.
@@ -12,13 +12,11 @@ pub(crate) const USE_CHECK_FN: bool = false;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
-    for (i, byte) in input.iter().enumerate() {
-        let (high, low) = byte2hex::<UPPER>(*byte);
-        unsafe {
-            *output.get_unchecked_mut(i * 2) = high;
-            *output.get_unchecked_mut(i * 2 + 1) = low;
-        }
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Output) {
+    for &byte in input {
+        let (high, low) = byte2hex::<UPPER>(byte);
+        output.write_byte(high);
+        output.write_byte(low);
     }
 }
 
@@ -29,19 +27,15 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) 
 #[allow(dead_code)]
 pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy>(
     input: &[u8],
-    output: &mut [u8],
+    mut output: impl Output,
     mut encode_chunk: impl FnMut(T) -> U,
 ) {
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
     let (chunks, remainder) = chunks_unaligned::<T>(input);
-    let n_chunks = chunks.len();
-    let chunk_output = output.as_mut_ptr().cast::<U>();
-    for (i, chunk) in chunks.enumerate() {
-        let out = encode_chunk(chunk);
-        unsafe { chunk_output.add(i).write_unaligned(out) };
+    for chunk in chunks {
+        output.write(as_bytes(&encode_chunk(chunk)));
     }
-    let remainder_output = unsafe { output.get_unchecked_mut(n_chunks * size_of::<U>()..) };
-    unsafe { encode::<UPPER>(remainder, remainder_output) };
+    unsafe { encode::<UPPER>(remainder, output) };
 }
 
 /// Default check function.
@@ -82,7 +76,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex.
-pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
+pub(crate) unsafe fn decode_unchecked(input: &[u8], output: impl Output) {
     #[allow(unused_braces)] // False positive on older rust versions.
     let success = unsafe { decode_maybe_check::<{ cfg!(debug_assertions) }>(input, output) };
     debug_assert!(success);
@@ -94,7 +88,7 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
 ///
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex if `CHECK` is `true`.
 #[inline(always)]
-unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], output: &mut [u8]) -> bool {
+unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], mut output: impl Output) -> bool {
     macro_rules! next {
         ($var:ident, $i:expr) => {
             let hex = unsafe { *input.get_unchecked($i) };
@@ -107,12 +101,13 @@ unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], output: &mut [u8])
         };
     }
 
-    debug_assert_eq!(output.len(), input.len() / 2);
+    let l = output.remaining().unwrap_or(input.len() / 2);
+    debug_assert_eq!(l, input.len() / 2);
     let mut i = 0;
-    while i < output.len() {
+    while i < l {
         next!(high, i * 2);
         next!(low, i * 2 + 1);
-        output[i] = high << 4 | low;
+        output.write_byte(high << 4 | low);
         i += 1;
     }
     true
@@ -125,19 +120,15 @@ unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], output: &mut [u8])
 #[allow(dead_code)]
 pub(crate) unsafe fn decode_unchecked_unaligned_chunks<T: Copy, U: Copy>(
     input: &[u8],
-    output: &mut [u8],
+    mut output: impl Output,
     mut decode_chunk: impl FnMut(U) -> T,
 ) {
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
     let (chunks, remainder) = chunks_unaligned::<U>(input);
-    let n_chunks = chunks.len();
-    let chunk_output = output.as_mut_ptr().cast::<T>();
-    for (i, chunk) in chunks.enumerate() {
-        let out = decode_chunk(chunk);
-        unsafe { chunk_output.add(i).write_unaligned(out) };
+    for chunk in chunks {
+        output.write(as_bytes(&decode_chunk(chunk)));
     }
-    let remainder_output = unsafe { output.get_unchecked_mut(n_chunks * size_of::<T>()..) };
-    unsafe { decode_unchecked(remainder, remainder_output) };
+    unsafe { decode_unchecked(remainder, output) };
 }
 
 #[inline]
@@ -148,4 +139,9 @@ fn chunks_unaligned<T: Copy>(input: &[u8]) -> (impl ExactSizeIterator<Item = T> 
         chunks.map(|chunk| unsafe { chunk.as_ptr().cast::<T>().read_unaligned() }),
         remainder,
     )
+}
+
+#[inline]
+const fn as_bytes<T: Copy>(x: &T) -> &[u8] {
+    unsafe { core::slice::from_raw_parts(x as *const _ as *const u8, size_of::<T>()) }
 }

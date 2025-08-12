@@ -1,14 +1,14 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use super::generic;
-use crate::get_chars_table;
+use crate::{get_chars_table, Output};
 use core::arch::wasm32::*;
 
 pub(crate) const USE_CHECK_FN: bool = true;
 
 #[inline]
 #[target_feature(enable = "simd128")]
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
     // Load table.
     let hex_table = v128_load(get_chars_table::<UPPER>().as_ptr().cast());
 

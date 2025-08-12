@@ -1,14 +1,14 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use super::generic;
-use crate::get_chars_table;
+use crate::{get_chars_table, Output};
 use core::simd::prelude::*;
 
 type Simd = u8x16;
 
 pub(crate) const USE_CHECK_FN: bool = true;
 
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: &mut [u8]) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
     // Load table.
     let hex_table = Simd::from_array(*get_chars_table::<UPPER>());
 
