@@ -48,6 +48,13 @@ impl<const N: usize, const PREFIX: bool> fmt::Debug for Buffer<N, PREFIX> {
     }
 }
 
+impl<const N: usize, const PREFIX: bool> AsRef<str> for Buffer<N, PREFIX> {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// The length of the buffer in bytes.
     pub const LEN: usize = (N + PREFIX as usize) * 2;
