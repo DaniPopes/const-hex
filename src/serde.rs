@@ -1,4 +1,4 @@
-//! Hex encoding with [`serde`].
+//! Hex encoding with [`serde`](serde_core).
 //!
 //! # Examples
 //!
