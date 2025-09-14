@@ -160,7 +160,7 @@ fn check() {
 }
 
 #[test]
-#[cfg(all(feature = "serde", feature = "alloc", not(feature = "hex")))]
+#[cfg(all(feature = "serde", feature = "alloc"))]
 fn serde() {
     #[derive(serde::Serialize, serde::Deserialize)]
     struct All {

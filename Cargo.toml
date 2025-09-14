@@ -28,8 +28,10 @@ proptest = { version = "1.4", optional = true, default-features = false }
 cpufeatures = "0.2"
 
 [dev-dependencies]
-faster-hex = { version = "0.10.0", default-features = false, features = ["alloc"] }
-hex = { version = "~0.4.2", default-features = false }
+faster-hex = { version = "0.10.0", default-features = false, features = [
+    "alloc",
+] }
+hex = { version = "~0.4.2", default-features = false, features = ["alloc"] }
 rustc-hex = "2.1"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
@@ -38,19 +40,15 @@ divan = { package = "codspeed-divan-compat", version = "3" }
 
 [features]
 default = ["std"]
-std = ["hex?/std", "serde?/std", "proptest?/std", "alloc"]
-alloc = ["hex?/alloc", "serde?/alloc", "proptest?/alloc"]
+std = ["serde?/std", "proptest?/std", "alloc"]
+alloc = ["serde?/alloc", "proptest?/alloc"]
 
 # Enables `core::error::Error` implementations always instead of conditionally through `std`.
 # Requires Rust 1.81 or newer.
 core-error = []
 
 # Serde support. Use with `#[serde(with = "const_hex")]`.
-serde = ["hex?/serde", "dep:serde"]
-
-# Use `hex`'s traits instead of our own.
-# This should not be needed most of the time.
-hex = ["dep:hex"]
+serde = ["dep:serde"]
 
 # Forces generic implementation, overriding any specialized implementation (e.g. x86 or aarch64).
 force-generic = []

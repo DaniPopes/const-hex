@@ -74,21 +74,11 @@ pub use traits::ToHexExt;
 mod display;
 pub use display::display;
 
-// If the `hex` feature is enabled, re-export the `hex` crate's traits.
-// Otherwise, use our own with the more optimized implementation.
-cfg_if! {
-    if #[cfg(feature = "hex")] {
-        pub use hex;
-        #[doc(inline)]
-        pub use hex::{FromHex, FromHexError, ToHex};
-    } else {
-        mod error;
-        pub use error::FromHexError;
+mod error;
+pub use error::FromHexError;
 
-        #[allow(deprecated)]
-        pub use traits::{FromHex, ToHex};
-    }
-}
+#[allow(deprecated)]
+pub use traits::{FromHex, ToHex};
 
 // Support for nightly features.
 cfg_if! {
