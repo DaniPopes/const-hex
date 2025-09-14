@@ -17,12 +17,12 @@
 use crate::FromHex;
 use core::fmt;
 use core::marker::PhantomData;
-use serde::de::{Error, Visitor};
-use serde::Deserializer;
+use serde_core::de::{Error, Visitor};
+use serde_core::Deserializer;
 
 #[cfg(feature = "alloc")]
 mod serialize {
-    use serde::Serializer;
+    use serde_core::Serializer;
 
     /// Serializes `data` as hex string using lowercase characters.
     ///
