@@ -19,7 +19,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 cfg-if = "1"
-hex = { version = "~0.4.2", optional = true, default-features = false }
 serde_core = { version = "1.0", optional = true, default-features = false }
 
 proptest = { version = "1.4", optional = true, default-features = false }
@@ -49,6 +48,9 @@ core-error = []
 
 # Serde support. Use with `#[serde(with = "const_hex")]`.
 serde = ["dep:serde_core"]
+
+# Deprecated. Does nothing.
+hex = []
 
 # Forces generic implementation, overriding any specialized implementation (e.g. x86 or aarch64).
 force-generic = []
