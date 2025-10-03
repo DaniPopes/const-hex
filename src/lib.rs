@@ -196,6 +196,54 @@ pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
     encode_to_slice_inner::<true>(input.as_ref(), output)
 }
 
+/// Encodes `input` as a hex string using lowercase characters into a mutable
+/// slice of bytes `output`. Returns the slice to `output` reinterpreted as
+/// `str`.
+///
+/// # Errors
+///
+/// If the output buffer is not exactly `input.len() * 2` bytes long.
+///
+/// # Examples
+///
+/// ```
+/// let mut bytes = [0u8; 4 * 2];
+/// let s = const_hex::encode_to_str(b"kiwi", &mut bytes)?;
+/// assert_eq!(s, "6b697769");
+/// # Ok::<_, const_hex::FromHexError>(())
+/// ```
+#[inline]
+pub fn encode_to_str<'o, T: AsRef<[u8]>>(
+    input: T,
+    output: &'o mut [u8],
+) -> Result<&'o str, FromHexError> {
+    encode_to_str_inner::<false>(input.as_ref(), output)
+}
+
+/// Encodes `input` as a hex string using uppercase characters into a mutable
+/// slice of bytes `output`. Returns the slice to `output` reinterpreted as
+/// `str`.
+///
+/// # Errors
+///
+/// If the output buffer is not exactly `input.len() * 2` bytes long.
+///
+/// # Examples
+///
+/// ```
+/// let mut bytes = [0u8; 4 * 2];
+/// let s = const_hex::encode_to_str_upper(b"kiwi", &mut bytes)?;
+/// assert_eq!(s, "6B697769");
+/// # Ok::<_, const_hex::FromHexError>(())
+/// ```
+#[inline]
+pub fn encode_to_str_upper<'o, T: AsRef<[u8]>>(
+    input: T,
+    output: &'o mut [u8],
+) -> Result<&'o str, FromHexError> {
+    encode_to_str_inner::<true>(input.as_ref(), output)
+}
+
 /// Encodes `data` as a hex string using lowercase characters.
 ///
 /// Lowercase characters are used (e.g. `f9b4ca`). The resulting string's
@@ -586,6 +634,18 @@ fn encode_to_slice_inner<const UPPER: bool>(
     // SAFETY: Lengths are checked above.
     unsafe { imp::encode::<UPPER>(input, output) };
     Ok(())
+}
+
+fn encode_to_str_inner<'o, const UPPER: bool>(
+    input: &[u8],
+    output: &'o mut [u8],
+) -> Result<&'o str, FromHexError> {
+    encode_to_slice_inner::<UPPER>(input, output)?;
+    // SAFETY: encode_to_slice_inner checks the length of the output slice and
+    // overwrites it completely with only ascii characters, which are valid
+    // unicode
+    let s = unsafe { str::from_utf8_unchecked(output) };
+    Ok(s)
 }
 
 fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
