@@ -644,7 +644,7 @@ fn encode_to_str_inner<'o, const UPPER: bool>(
     // SAFETY: encode_to_slice_inner checks the length of the output slice and
     // overwrites it completely with only ascii characters, which are valid
     // unicode
-    let s = unsafe { std::str::from_utf8_unchecked_mut(output) };
+    let s = unsafe { core::str::from_utf8_unchecked_mut(output) };
     Ok(s)
 }
 
