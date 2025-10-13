@@ -17,7 +17,7 @@
 //! [`hex`]: https://docs.rs/hex
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(
     feature = "nightly",
     feature(core_intrinsics, inline_const),
