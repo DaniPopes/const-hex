@@ -213,10 +213,10 @@ pub fn encode_to_slice_upper<T: AsRef<[u8]>>(
 /// # Ok::<_, const_hex::FromHexError>(())
 /// ```
 #[inline]
-pub fn encode_to_str<'o, T: AsRef<[u8]>>(
+pub fn encode_to_str<T: AsRef<[u8]>>(
     input: T,
-    output: &'o mut [u8],
-) -> Result<&'o str, FromHexError> {
+    output: &mut [u8],
+) -> Result<&mut str, FromHexError> {
     encode_to_str_inner::<false>(input.as_ref(), output)
 }
 
@@ -237,10 +237,10 @@ pub fn encode_to_str<'o, T: AsRef<[u8]>>(
 /// # Ok::<_, const_hex::FromHexError>(())
 /// ```
 #[inline]
-pub fn encode_to_str_upper<'o, T: AsRef<[u8]>>(
+pub fn encode_to_str_upper<T: AsRef<[u8]>>(
     input: T,
-    output: &'o mut [u8],
-) -> Result<&'o str, FromHexError> {
+    output: &mut [u8],
+) -> Result<&mut str, FromHexError> {
     encode_to_str_inner::<true>(input.as_ref(), output)
 }
 
@@ -639,12 +639,12 @@ fn encode_to_slice_inner<const UPPER: bool>(
 fn encode_to_str_inner<'o, const UPPER: bool>(
     input: &[u8],
     output: &'o mut [u8],
-) -> Result<&'o str, FromHexError> {
+) -> Result<&'o mut str, FromHexError> {
     encode_to_slice_inner::<UPPER>(input, output)?;
     // SAFETY: encode_to_slice_inner checks the length of the output slice and
     // overwrites it completely with only ascii characters, which are valid
     // unicode
-    let s = unsafe { str::from_utf8_unchecked(output) };
+    let s = unsafe { std::str::from_utf8_unchecked_mut(output) };
     Ok(s)
 }
 
