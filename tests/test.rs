@@ -175,6 +175,46 @@ fn serde() {
     assert_eq!(decoded.x, ALL);
 }
 
+#[test]
+#[cfg(all(feature = "serde", feature = "alloc"))]
+fn serde_option_some() {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct AllOption {
+        #[serde(
+            serialize_with = "const_hex::serde::serialize_option",
+            deserialize_with = "const_hex::serde::deserialize_option"
+        )]
+        x: Option<Vec<u8>>,
+    }
+
+    let all = AllOption {
+        x: Some(ALL.to_vec()),
+    };
+    let encoded = serde_json::to_string(&all).unwrap();
+    assert_eq!(encoded, format!(r#"{{"x":"0x{ALL_LOWER}"}}"#));
+    let decoded: AllOption = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded.x, Some(ALL.to_vec()));
+}
+
+#[test]
+#[cfg(all(feature = "serde", feature = "alloc"))]
+fn serde_option_none() {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct AllOption {
+        #[serde(
+            serialize_with = "const_hex::serde::serialize_option",
+            deserialize_with = "const_hex::serde::deserialize_option"
+        )]
+        x: Option<Vec<u8>>,
+    }
+
+    let all = AllOption { x: None };
+    let encoded = serde_json::to_string(&all).unwrap();
+    assert_eq!(encoded, r#"{"x":null}"#);
+    let decoded: AllOption = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded.x, None);
+}
+
 const ALL: [u8; 256] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,

@@ -90,3 +90,83 @@ where
 
     deserializer.deserialize_str(HexStrVisitor(PhantomData))
 }
+
+/// Deserializes an optional hex string into raw bytes.
+///
+/// Returns `None` if the value is null, otherwise deserializes using [`deserialize`].
+#[inline]
+pub fn deserialize_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromHex,
+    <T as FromHex>::Error: fmt::Display,
+{
+    struct OptionalHexStrVisitor<T>(PhantomData<T>);
+
+    impl<'de, T> Visitor<'de> for OptionalHexStrVisitor<T>
+    where
+        T: FromHex,
+        <T as FromHex>::Error: fmt::Display,
+    {
+        type Value = Option<T>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a hex encoded string or null")
+        }
+
+        fn visit_none<E: Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserialize(deserializer).map(Some)
+        }
+
+        fn visit_unit<E: Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_option(OptionalHexStrVisitor(PhantomData))
+}
+
+#[cfg(feature = "alloc")]
+mod serialize_option {
+    use serde_core::Serializer;
+
+    /// Serializes an optional value as a hex string using lowercase characters.
+    ///
+    /// Serializes `None` as null, and `Some(data)` using [`super::serialize`].
+    #[inline]
+    pub fn serialize_option<S, T>(data: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: AsRef<[u8]>,
+    {
+        match data {
+            Some(data) => serializer.serialize_str(&crate::encode_prefixed(data.as_ref())),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    /// Serializes an optional value as a hex string using uppercase characters.
+    ///
+    /// Apart from the characters' casing, this works exactly like [`serialize_option`].
+    #[inline]
+    pub fn serialize_upper_option<S, T>(data: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: AsRef<[u8]>,
+    {
+        match data {
+            Some(data) => serializer.serialize_str(&crate::encode_upper_prefixed(data.as_ref())),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub use serialize_option::{serialize_option, serialize_upper_option};
