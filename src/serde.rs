@@ -24,12 +24,12 @@ use serde_core::Deserializer;
 mod serialize {
     use serde_core::Serializer;
 
-    /// Serializes `data` as hex string using lowercase characters.
+    /// Serializes `data` as hex string using lowercase characters with a `0x` prefix.
     ///
     /// Lowercase characters are used (e.g. `f9b4ca`). The resulting string's length
     /// is always even, each byte in data is always encoded using two hex digits.
     /// Thus, the resulting string contains exactly twice as many bytes as the input
-    /// data.
+    /// data plus two (for the prefix).
     #[inline]
     pub fn serialize<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -89,4 +89,58 @@ where
     }
 
     deserializer.deserialize_str(HexStrVisitor(PhantomData))
+}
+
+/// Hex encoding with [`serde`](serde_core).
+///
+/// # Examples
+///
+/// ```
+/// # #[cfg(feature = "alloc")] {
+/// use serde::{Serialize, Deserialize};
+///
+/// #[derive(Serialize, Deserialize)]
+/// struct Foo {
+///     #[serde(with = "const_hex::serde::nopfx")]
+///     bar: Vec<u8>,
+/// }
+/// # }
+/// ```
+pub mod nopfx {
+    #[cfg(feature = "alloc")]
+    mod serialize {
+        use serde_core::Serializer;
+
+        /// Serializes `data` as hex string using lowercase characters.
+        ///
+        /// Lowercase characters are used (e.g. `f9b4ca`). The resulting string's length
+        /// is always even, each byte in data is always encoded using two hex digits.
+        /// Thus, the resulting string contains exactly twice as many bytes as the input
+        /// data.
+        #[inline]
+        pub fn serialize<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+            T: AsRef<[u8]>,
+        {
+            serializer.serialize_str(&crate::encode(data.as_ref()))
+        }
+
+        /// Serializes `data` as hex string using uppercase characters.
+        ///
+        /// Apart from the characters' casing, this works exactly like [`serialize`].
+        #[inline]
+        pub fn serialize_upper<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+            T: AsRef<[u8]>,
+        {
+            serializer.serialize_str(&crate::encode_upper(data.as_ref()))
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    pub use serialize::{serialize, serialize_upper};
+
+    pub use super::deserialize;
 }

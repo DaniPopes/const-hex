@@ -166,13 +166,32 @@ fn serde() {
     struct All {
         #[serde(with = "const_hex")]
         x: Vec<u8>,
+        #[serde(with = "const_hex::serde::nopfx")]
+        y: Vec<u8>,
     }
 
-    let all = All { x: ALL.to_vec() };
+    let all = All {
+        x: ALL.to_vec(),
+        y: ALL.to_vec(),
+    };
     let encoded = serde_json::to_string(&all).unwrap();
-    assert_eq!(encoded, format!(r#"{{"x":"0x{ALL_LOWER}"}}"#));
+    assert_eq!(
+        encoded,
+        format!(r#"{{"x":"0x{ALL_LOWER}","y":"{ALL_LOWER}"}}"#)
+    );
     let decoded: All = serde_json::from_str(&encoded).unwrap();
     assert_eq!(decoded.x, ALL);
+
+    // Check lengths of the encoded strings
+    let decoded: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(
+        decoded.get("x").unwrap().as_str().unwrap().len(),
+        ALL.len() * 2 + 2
+    );
+    assert_eq!(
+        decoded.get("y").unwrap().as_str().unwrap().len(),
+        ALL.len() * 2
+    );
 }
 
 const ALL: [u8; 256] = [
