@@ -76,5 +76,78 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
     })
 }
 
-pub(crate) use generic::decode_checked;
-pub(crate) use generic::decode_unchecked;
+#[inline]
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
+    if cfg!(miri) || !has_neon() {
+        return generic::decode_checked(input, output);
+    }
+    unsafe { decode_checked_neon(input, output) }
+}
+
+#[inline]
+pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
+    if cfg!(miri) || !has_neon() {
+        return generic::decode_unchecked(input, output);
+    }
+    let success = unsafe { decode_checked_neon(input, output) };
+    debug_assert!(success);
+}
+
+#[target_feature(enable = "neon")]
+unsafe fn decode_checked_neon(input: &[u8], output: &mut [u8]) -> bool {
+    let input_len = input.len();
+    let mut i = 0;
+    let mut o = 0;
+
+    while i + 32 <= input_len {
+        let chunk0 = vld1q_u8(input.as_ptr().add(i));
+        let chunk1 = vld1q_u8(input.as_ptr().add(i + 16));
+
+        let hi_chars = vuzp1q_u8(chunk0, chunk1);
+        let lo_chars = vuzp2q_u8(chunk0, chunk1);
+
+        let (hi_nib, hi_valid) = unhex_neon(hi_chars);
+        let (lo_nib, lo_valid) = unhex_neon(lo_chars);
+
+        let valid = vandq_u8(hi_valid, lo_valid);
+        if vminvq_u8(valid) != 0xFF {
+            return false;
+        }
+
+        let decoded = vorrq_u8(vshlq_n_u8(hi_nib, 4), lo_nib);
+        vst1q_u8(output.as_mut_ptr().add(o), decoded);
+
+        i += 32;
+        o += 16;
+    }
+
+    if i < input_len {
+        let rem_input = &input[i..];
+        let rem_output = &mut output[o..];
+        if !generic::decode_checked(rem_input, rem_output) {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[inline(always)]
+unsafe fn unhex_neon(chars: uint8x16_t) -> (uint8x16_t, uint8x16_t) {
+    let zero = vdupq_n_u8(b'0');
+    let nine = vdupq_n_u8(b'9');
+    let ascii_a = vdupq_n_u8(b'a');
+    let ascii_f = vdupq_n_u8(b'f');
+    let case_mask = vdupq_n_u8(0x20);
+
+    let digit_val = vsubq_u8(chars, zero);
+    let is_digit = vandq_u8(vcgeq_u8(chars, zero), vcleq_u8(chars, nine));
+
+    let lower = vorrq_u8(chars, case_mask);
+    let letter_val = vaddq_u8(vsubq_u8(lower, ascii_a), vdupq_n_u8(10));
+    let is_letter = vandq_u8(vcgeq_u8(lower, ascii_a), vcleq_u8(lower, ascii_f));
+
+    let nibble = vbslq_u8(is_digit, digit_val, letter_val);
+    let valid = vorrq_u8(is_digit, is_letter);
+    (nibble, valid)
+}
