@@ -4,7 +4,7 @@ use super::generic;
 use crate::{get_chars_table, Output};
 use core::arch::wasm32::*;
 
-pub(crate) const USE_CHECK_FN: bool = true;
+pub(crate) const USE_CHECK_FN: bool = false;
 
 #[inline]
 #[target_feature(enable = "simd128")]
