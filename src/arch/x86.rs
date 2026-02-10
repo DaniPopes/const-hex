@@ -51,10 +51,41 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
 
 #[inline]
 pub(crate) fn check(input: &[u8]) -> bool {
+    if has_avx2() {
+        return unsafe { check_avx2(input) };
+    }
     if !has_sse2() {
         return generic::check(input);
     }
     unsafe { check_sse2(input) }
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn check_avx2(input: &[u8]) -> bool {
+    let ascii_zero = _mm256_set1_epi8((b'0' - 1) as i8);
+    let ascii_nine = _mm256_set1_epi8((b'9' + 1) as i8);
+    let ascii_ua = _mm256_set1_epi8((b'A' - 1) as i8);
+    let ascii_uf = _mm256_set1_epi8((b'F' + 1) as i8);
+    let ascii_la = _mm256_set1_epi8((b'a' - 1) as i8);
+    let ascii_lf = _mm256_set1_epi8((b'f' + 1) as i8);
+
+    generic::check_unaligned_chunks(input, |chunk: __m256i| {
+        let ge0 = _mm256_cmpgt_epi8(chunk, ascii_zero);
+        let le9 = _mm256_cmpgt_epi8(ascii_nine, chunk);
+        let valid_digit = _mm256_and_si256(ge0, le9);
+
+        let geua = _mm256_cmpgt_epi8(chunk, ascii_ua);
+        let leuf = _mm256_cmpgt_epi8(ascii_uf, chunk);
+        let valid_upper = _mm256_and_si256(geua, leuf);
+
+        let gela = _mm256_cmpgt_epi8(chunk, ascii_la);
+        let lelf = _mm256_cmpgt_epi8(ascii_lf, chunk);
+        let valid_lower = _mm256_and_si256(gela, lelf);
+
+        let valid_letter = _mm256_or_si256(valid_lower, valid_upper);
+        let valid_mask = _mm256_movemask_epi8(_mm256_or_si256(valid_digit, valid_letter));
+        valid_mask == -1 // 0xFFFF_FFFF as i32
+    })
 }
 
 /// Modified from [`faster-hex`](https://github.com/nervosnetwork/faster-hex/blob/856aba7b141a5fe16113fae110d535065882f25a/src/decode.rs).
