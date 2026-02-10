@@ -70,5 +70,75 @@ pub(crate) fn check(input: &[u8]) -> bool {
     })
 }
 
-pub(crate) use generic::decode_checked;
-pub(crate) use generic::decode_unchecked;
+#[inline]
+#[target_feature(enable = "simd128")]
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
+    let input_len = input.len();
+    let mut i = 0;
+    let mut o = 0;
+
+    while i + 32 <= input_len {
+        let chunk0 = v128_load(input.as_ptr().add(i).cast());
+        let chunk1 = v128_load(input.as_ptr().add(i + 16).cast());
+
+        #[rustfmt::skip]
+        let hi_chars = u8x16_shuffle::<
+            0, 2, 4, 6, 8, 10, 12, 14,
+            16, 18, 20, 22, 24, 26, 28, 30,
+        >(chunk0, chunk1);
+        #[rustfmt::skip]
+        let lo_chars = u8x16_shuffle::<
+            1, 3, 5, 7, 9, 11, 13, 15,
+            17, 19, 21, 23, 25, 27, 29, 31,
+        >(chunk0, chunk1);
+
+        let (hi_nib, hi_valid) = unhex_wasm(hi_chars);
+        let (lo_nib, lo_valid) = unhex_wasm(lo_chars);
+
+        let valid = v128_and(hi_valid, lo_valid);
+        if !u8x16_all_true(valid) {
+            return false;
+        }
+
+        let decoded = v128_or(u8x16_shl(hi_nib, 4), lo_nib);
+        v128_store(output.as_mut_ptr().add(o).cast(), decoded);
+
+        i += 32;
+        o += 16;
+    }
+
+    if i < input_len {
+        if !generic::decode_checked(&input[i..], &mut output[o..]) {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[inline]
+#[target_feature(enable = "simd128")]
+pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
+    let success = decode_checked(input, output);
+    debug_assert!(success);
+}
+
+#[inline(always)]
+fn unhex_wasm(chars: v128) -> (v128, v128) {
+    let zero = u8x16_splat(b'0');
+    let nine = u8x16_splat(b'9');
+    let ascii_a = u8x16_splat(b'a');
+    let ascii_f = u8x16_splat(b'f');
+    let case_mask = u8x16_splat(0x20);
+
+    let digit_val = u8x16_sub(chars, zero);
+    let is_digit = v128_and(u8x16_ge(chars, zero), u8x16_le(chars, nine));
+
+    let lower = v128_or(chars, case_mask);
+    let letter_val = u8x16_add(u8x16_sub(lower, ascii_a), u8x16_splat(10));
+    let is_letter = v128_and(u8x16_ge(lower, ascii_a), u8x16_le(lower, ascii_f));
+
+    let nibble = v128_bitselect(digit_val, letter_val, is_digit);
+    let valid = v128_or(is_digit, is_letter);
+    (nibble, valid)
+}
