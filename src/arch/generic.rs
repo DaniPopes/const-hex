@@ -31,10 +31,15 @@ pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy
     mut encode_chunk: impl FnMut(T) -> U,
 ) {
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
-    let (chunks, remainder) = chunks_unaligned::<T>(input);
-    for chunk in chunks {
+    let chunk_size = size_of::<T>();
+    let mut ptr = input.as_ptr();
+    let end = unsafe { ptr.add(input.len()) };
+    while unsafe { ptr.add(chunk_size) } <= end {
+        let chunk = unsafe { ptr.cast::<T>().read_unaligned() };
         output.write(as_bytes(&encode_chunk(chunk)));
+        ptr = unsafe { ptr.add(chunk_size) };
     }
+    let remainder = unsafe { core::slice::from_raw_parts(ptr, end as usize - ptr as usize) };
     unsafe { encode::<UPPER>(remainder, output) };
 }
 
@@ -56,10 +61,20 @@ pub(crate) const fn check(mut input: &[u8]) -> bool {
 #[allow(dead_code)]
 pub(crate) fn check_unaligned_chunks<T: Copy>(
     input: &[u8],
-    check_chunk: impl FnMut(T) -> bool,
+    mut check_chunk: impl FnMut(T) -> bool,
 ) -> bool {
-    let (mut chunks, remainder) = chunks_unaligned(input);
-    chunks.all(check_chunk) && check(remainder)
+    let chunk_size = size_of::<T>();
+    let mut ptr = input.as_ptr();
+    let end = unsafe { ptr.add(input.len()) };
+    while unsafe { ptr.add(chunk_size) } <= end {
+        let chunk = unsafe { ptr.cast::<T>().read_unaligned() };
+        if !check_chunk(chunk) {
+            return false;
+        }
+        ptr = unsafe { ptr.add(chunk_size) };
+    }
+    let remainder = unsafe { core::slice::from_raw_parts(ptr, end as usize - ptr as usize) };
+    check(remainder)
 }
 
 /// Default checked decoding function.
@@ -124,21 +139,16 @@ pub(crate) unsafe fn decode_unchecked_unaligned_chunks<T: Copy, U: Copy>(
     mut decode_chunk: impl FnMut(U) -> T,
 ) {
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
-    let (chunks, remainder) = chunks_unaligned::<U>(input);
-    for chunk in chunks {
+    let chunk_size = size_of::<U>();
+    let mut ptr = input.as_ptr();
+    let end = unsafe { ptr.add(input.len()) };
+    while unsafe { ptr.add(chunk_size) } <= end {
+        let chunk = unsafe { ptr.cast::<U>().read_unaligned() };
         output.write(as_bytes(&decode_chunk(chunk)));
+        ptr = unsafe { ptr.add(chunk_size) };
     }
+    let remainder = unsafe { core::slice::from_raw_parts(ptr, end as usize - ptr as usize) };
     unsafe { decode_unchecked(remainder, output) };
-}
-
-#[inline]
-fn chunks_unaligned<T: Copy>(input: &[u8]) -> (impl ExactSizeIterator<Item = T> + '_, &[u8]) {
-    let chunks = input.chunks_exact(core::mem::size_of::<T>());
-    let remainder = chunks.remainder();
-    (
-        chunks.map(|chunk| unsafe { chunk.as_ptr().cast::<T>().read_unaligned() }),
-        remainder,
-    )
 }
 
 #[inline]
