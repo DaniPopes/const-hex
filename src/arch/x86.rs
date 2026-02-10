@@ -34,10 +34,13 @@ cfg_if::cfg_if! {
 
 #[inline]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
-    if !has_avx2() {
-        return generic::encode::<UPPER>(input, output);
+    if has_avx2() {
+        return encode_avx2::<UPPER>(input, output);
     }
-    encode_avx2::<UPPER>(input, output);
+    if has_sse2() {
+        return unsafe { encode_sse2::<UPPER>(input, output) };
+    }
+    generic::encode::<UPPER>(input, output);
 }
 
 #[inline(never)]
@@ -46,6 +49,34 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
     generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |av: __m128i| {
         let nibs = byte2nib(av);
         hex::<UPPER>(nibs)
+    });
+}
+
+#[inline(never)]
+#[target_feature(enable = "sse2")]
+unsafe fn encode_sse2<const UPPER: bool>(input: &[u8], output: impl Output) {
+    let letter_offset = if UPPER {
+        _mm_set1_epi8((b'A' - b'0' - 10) as i8)
+    } else {
+        _mm_set1_epi8((b'a' - b'0' - 10) as i8)
+    };
+    let ascii_zero = _mm_set1_epi8(b'0' as i8);
+    let nines = _mm_set1_epi8(9);
+    let mask_lo = _mm_set1_epi8(0x0F);
+
+    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: u64| {
+        let v = _mm_set_epi64x(0, chunk as i64);
+
+        let lo = _mm_and_si128(v, mask_lo);
+        let hi = _mm_and_si128(_mm_srli_epi16(v, 4), mask_lo);
+
+        let lo_offset = _mm_and_si128(_mm_cmpgt_epi8(lo, nines), letter_offset);
+        let hi_offset = _mm_and_si128(_mm_cmpgt_epi8(hi, nines), letter_offset);
+
+        let lo_ascii = _mm_add_epi8(_mm_add_epi8(lo, ascii_zero), lo_offset);
+        let hi_ascii = _mm_add_epi8(_mm_add_epi8(hi, ascii_zero), hi_offset);
+
+        _mm_unpacklo_epi8(hi_ascii, lo_ascii)
     });
 }
 
