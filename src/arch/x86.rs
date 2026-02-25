@@ -140,23 +140,14 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 
             _mm256_movemask_epi8(_mm256_or_si256(m1, m2)) == -1
         },
-        |remainder| {
-            if remainder.len() >= 16 {
-                let chunk = _mm_loadu_si128(remainder.as_ptr().cast());
-                if !check_chunk_sse2(chunk) {
-                    return false;
-                }
-                return generic::check(&remainder[16..]);
-            }
-            generic::check(remainder)
-        },
+        |remainder| generic::check_one_unaligned_chunk(remainder, |c| check_chunk_sse2(c)),
     )
 }
 
 /// See [`check_avx2`].
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
-    generic::check_unaligned_chunks(input, check_chunk_sse2)
+    generic::check_unaligned_chunks(input, |c| check_chunk_sse2(c))
 }
 
 #[inline]

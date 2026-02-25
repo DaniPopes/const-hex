@@ -86,6 +86,21 @@ pub(crate) fn check_unaligned_chunks<T: Copy>(
     check_unaligned_chunks_with(input, check_chunk, check)
 }
 
+/// Checks at most one `T`-sized chunk, then scalar remainder.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn check_one_unaligned_chunk<T: Copy>(
+    input: &[u8],
+    check_chunk: impl FnOnce(T) -> bool,
+) -> bool {
+    if input.len() >= size_of::<T>() {
+        let chunk = unsafe { input.as_ptr().cast::<T>().read_unaligned() };
+        check_chunk(chunk) && check(&input[size_of::<T>()..])
+    } else {
+        check(input)
+    }
+}
+
 /// Like [`check_unaligned_chunks`], but with a custom remainder handler.
 #[inline]
 #[allow(dead_code)]
