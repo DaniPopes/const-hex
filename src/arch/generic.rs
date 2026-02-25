@@ -94,8 +94,9 @@ pub(crate) fn check_one_unaligned_chunk<T: Copy>(
     check_chunk: impl FnOnce(T) -> bool,
 ) -> bool {
     if input.len() >= size_of::<T>() {
-        let chunk = unsafe { input.as_ptr().cast::<T>().read_unaligned() };
-        check_chunk(chunk) && check(&input[size_of::<T>()..])
+        let (l, r) = input.split_at(size_of::<T>());
+        let chunk = unsafe { l.as_ptr().cast::<T>().read_unaligned() };
+        check_chunk(chunk) && check(r)
     } else {
         check(input)
     }
