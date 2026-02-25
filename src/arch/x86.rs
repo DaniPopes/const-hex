@@ -42,7 +42,7 @@ cfg_if::cfg_if! {
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
     match () {
         _ if has_avx2() => encode_avx2::<UPPER>(input, output),
-        _ if has_ssse3() => encode_sse2::<UPPER>(input, output),
+        _ if has_ssse3() => encode_ssse3::<UPPER>(input, output),
         _ => generic::encode::<UPPER>(input, output),
     }
 }
@@ -54,7 +54,7 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
         input,
         output,
         |av: __m256i| encode32::<UPPER>(av),
-        |remainder, out| encode_sse2::<UPPER>(remainder, out),
+        |remainder, out| encode_ssse3::<UPPER>(remainder, out),
     );
 }
 
@@ -82,7 +82,7 @@ unsafe fn encode32<const UPPER: bool>(input: __m256i) -> [__m256i; 2] {
 
 #[inline(never)]
 #[target_feature(enable = "ssse3")]
-unsafe fn encode_sse2<const UPPER: bool>(input: &[u8], output: impl Output) {
+unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
     generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |av: __m128i| {
         encode16::<UPPER>(av)
     });
