@@ -101,12 +101,12 @@ where
 ///
 /// #[derive(Serialize, Deserialize)]
 /// struct Foo {
-///     #[serde(with = "const_hex::serde::nopfx")]
+///     #[serde(with = "const_hex::serde::no_prefix")]
 ///     bar: Vec<u8>,
 /// }
 /// # }
 /// ```
-pub mod nopfx {
+pub mod no_prefix {
     #[cfg(feature = "alloc")]
     mod serialize {
         use serde_core::Serializer;

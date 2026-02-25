@@ -166,7 +166,7 @@ fn serde() {
     struct All {
         #[serde(with = "const_hex")]
         x: Vec<u8>,
-        #[serde(with = "const_hex::serde::nopfx")]
+        #[serde(with = "const_hex::serde::no_prefix")]
         y: Vec<u8>,
     }
 
