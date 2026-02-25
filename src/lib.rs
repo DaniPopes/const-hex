@@ -111,10 +111,7 @@ cfg_if! {
         pub mod serde;
 
         #[doc(no_inline)]
-        pub use self::serde::deserialize;
-        #[cfg(feature = "alloc")]
-        #[doc(no_inline)]
-        pub use self::serde::{serialize, serialize_upper};
+        pub use self::serde::{deserialize, serialize, serialize_upper};
     }
 }
 
