@@ -142,7 +142,8 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
         },
         |remainder| {
             if remainder.len() >= 16 {
-                if !check_chunk_sse2(remainder.as_ptr().cast()) {
+                let chunk = _mm_loadu_si128(remainder.as_ptr().cast());
+                if !check_chunk_sse2(chunk) {
                     return false;
                 }
                 return generic::check(&remainder[16..]);
@@ -155,13 +156,12 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 /// See [`check_avx2`].
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
-    generic::check_unaligned_chunks(input, |chunk: __m128i| check_chunk_sse2(&chunk))
+    generic::check_unaligned_chunks(input, check_chunk_sse2)
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn check_chunk_sse2(chunk: *const __m128i) -> bool {
-    let chunk = _mm_loadu_si128(chunk);
+unsafe fn check_chunk_sse2(chunk: __m128i) -> bool {
     let digit_bias = _mm_set1_epi8(0xB0_u8 as i8);
     let alpha_bias = _mm_set1_epi8(0xC1_u8 as i8);
     let case_mask = _mm_set1_epi8(0xDF_u8 as i8);
