@@ -54,7 +54,11 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
         input,
         output,
         |av: __m256i| encode_chunk_avx2::<UPPER>(av),
-        |remainder, out| encode_ssse3::<UPPER>(remainder, out),
+        |remainder, out| {
+            generic::encode_one_unaligned_chunk::<UPPER, _, _>(remainder, out, |av: __m128i| {
+                encode_chunk_ssse3::<UPPER>(av)
+            })
+        },
     );
 }
 

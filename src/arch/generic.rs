@@ -38,6 +38,24 @@ pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy
     unsafe { encode::<UPPER>(remainder, output) };
 }
 
+/// Encodes at most one `T`-sized chunk, then scalar remainder.
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn encode_one_unaligned_chunk<const UPPER: bool, T: Copy, U: Copy>(
+    input: &[u8],
+    mut output: impl Output,
+    encode_chunk: impl FnOnce(T) -> U,
+) {
+    debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
+    if input.len() >= size_of::<T>() {
+        let chunk = input.as_ptr().cast::<T>().read_unaligned();
+        output.write(as_bytes(&encode_chunk(chunk)));
+        encode::<UPPER>(&input[size_of::<T>()..], output);
+    } else {
+        encode::<UPPER>(input, output);
+    }
+}
+
 /// Like [`encode_unaligned_chunks`], but with a custom remainder handler.
 ///
 /// `encode_remainder` receives the remaining bytes and a mutable reference to the output
