@@ -38,6 +38,31 @@ pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy
     unsafe { encode::<UPPER>(remainder, output) };
 }
 
+/// Like [`encode_unaligned_chunks`], but with a custom remainder handler.
+///
+/// `encode_remainder` receives the remaining bytes and a mutable reference to the output
+/// offset past the already-written chunks.
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn encode_unaligned_chunks_with<
+    const UPPER: bool,
+    T: Copy,
+    U: Copy,
+    O: Output,
+>(
+    input: &[u8],
+    mut output: O,
+    mut encode_chunk: impl FnMut(T) -> U,
+    encode_remainder: impl FnOnce(&[u8], O),
+) {
+    debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
+    let (chunks, remainder) = chunks_unaligned::<T>(input);
+    for chunk in chunks {
+        output.write(as_bytes(&encode_chunk(chunk)));
+    }
+    encode_remainder(remainder, output);
+}
+
 /// Default check function.
 #[inline]
 pub(crate) const fn check(mut input: &[u8]) -> bool {
