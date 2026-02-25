@@ -129,7 +129,7 @@ pub(crate) fn check_unaligned_chunks_with<T: Copy>(
     check_remainder: impl FnOnce(&[u8]) -> bool,
 ) -> bool {
     let (mut chunks, remainder) = chunks_unaligned(input);
-    chunks.all(check_chunk) && check_remainder(remainder)
+    chunks.all(check_chunk) && (remainder.is_empty() || check_remainder(remainder))
 }
 
 /// Default checked decoding function.
