@@ -84,7 +84,6 @@ unsafe fn encode_chunk_avx2<const UPPER: bool>(input: __m256i) -> [__m256i; 2] {
     ]
 }
 
-#[inline(never)]
 #[target_feature(enable = "ssse3")]
 unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
     generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |av: __m128i| {
