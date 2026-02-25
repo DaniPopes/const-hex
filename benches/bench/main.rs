@@ -59,6 +59,20 @@ macro_rules! benches {
             }
 
             #[cfg(not(codspeed))]
+            mod hex_simd {
+                use super::*;
+
+                $(
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
+                            ::hex_simd::check(black_box($dec.as_bytes()))
+                        });
+                    }
+                )*
+            }
+
+            #[cfg(not(codspeed))]
             mod naive {
                 use super::*;
 
@@ -117,6 +131,20 @@ macro_rules! benches {
                     fn $name(b: Bencher) {
                         b.bench(|| {
                             ::hex::decode(black_box($dec))
+                        });
+                    }
+                )*
+            }
+
+            #[cfg(not(codspeed))]
+            mod hex_simd {
+                use super::*;
+
+                $(
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
+                            ::hex_simd::decode_to_vec(black_box($dec.as_bytes()))
                         });
                     }
                 )*
@@ -184,6 +212,22 @@ macro_rules! benches {
                     }
                 )*
             }
+
+            #[cfg(not(codspeed))]
+            mod hex_simd {
+                use super::*;
+                use ::hex_simd::AsOut;
+
+                $(
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        let mut buf = [0u8; $dec.len() / 2];
+                        b.bench_local(|| {
+                            let _ = ::hex_simd::decode(black_box($dec.as_bytes()), buf.as_mut_slice().as_out());
+                        });
+                    }
+                )*
+            }
         }
 
         #[cfg(feature = "alloc")]
@@ -226,6 +270,20 @@ macro_rules! benches {
                     fn $name(b: Bencher) {
                         b.bench(|| {
                             ::hex::encode(black_box($enc))
+                        });
+                    }
+                )*
+            }
+
+            #[cfg(not(codspeed))]
+            mod hex_simd {
+                use super::*;
+
+                $(
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        b.bench(|| {
+                            ::hex_simd::encode_to_string(black_box($enc), ::hex_simd::AsciiCase::Lower)
                         });
                     }
                 )*
@@ -288,6 +346,22 @@ macro_rules! benches {
                         let buf = &mut [0; $enc.len() * 2];
                         b.bench_local(|| {
                             ::hex::encode_to_slice(black_box($enc), black_box(buf))
+                        });
+                    }
+                )*
+            }
+
+            #[cfg(not(codspeed))]
+            mod hex_simd {
+                use super::*;
+                use ::hex_simd::AsOut;
+
+                $(
+                    #[divan::bench]
+                    fn $name(b: Bencher) {
+                        let mut buf = [0u8; $enc.len() * 2];
+                        b.bench_local(|| {
+                            let _ = ::hex_simd::encode(black_box($enc), buf.as_mut_slice().as_out(), ::hex_simd::AsciiCase::Lower);
                         });
                     }
                 )*
