@@ -79,25 +79,30 @@ pub(crate) fn check(input: &[u8]) -> bool {
     }
 }
 
-/// Hex check using signed overflow trick.
+/// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
+/// then a single `cmpgt(start + len, x)` checks if `x` falls within the range.
+///
+/// - Digits '0'..'9' (0x30..0x39): bias by 0xB0 maps to -128..-119, threshold -118 (10 values).
+/// - Letters 'A'..'F' (0x41..0x46): bias by 0xC1 maps to -128..-123, threshold -122 (6 values).
+///   Case folded with 0xDF mask so 'a'..'f' is handled identically.
 ///
 /// Based on Muła & Langdale:
 /// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[target_feature(enable = "avx2")]
 unsafe fn check_avx2(input: &[u8]) -> bool {
-    let digit_end = _mm256_set1_epi8((0x30_u8.wrapping_add(0x80)) as i8);
-    let alpha_end = _mm256_set1_epi8((0x41_u8.wrapping_add(0x80)) as i8);
+    let digit_bias = _mm256_set1_epi8(0xB0_u8 as i8); // '0' + 0x80
+    let alpha_bias = _mm256_set1_epi8(0xC1_u8 as i8); // 'A' + 0x80
     let case_mask = _mm256_set1_epi8(0xDF_u8 as i8);
-    let digit_threshold = _mm256_set1_epi8(-118);
-    let alpha_threshold = _mm256_set1_epi8(-122);
+    let digit_threshold = _mm256_set1_epi8(-118); // i8::MIN + 10
+    let alpha_threshold = _mm256_set1_epi8(-122); // i8::MIN + 6
 
     generic::check_unaligned_chunks_with(
         input,
         |chunk: __m256i| {
-            let x1 = _mm256_sub_epi8(chunk, digit_end);
+            let x1 = _mm256_sub_epi8(chunk, digit_bias);
             let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
 
-            let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_end);
+            let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_bias);
             let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
 
             _mm256_movemask_epi8(_mm256_or_si256(m1, m2)) == -1
@@ -109,17 +114,17 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 /// See [`check_avx2`].
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
-    let digit_end = _mm_set1_epi8((0x30_u8.wrapping_add(0x80)) as i8);
-    let alpha_end = _mm_set1_epi8((0x41_u8.wrapping_add(0x80)) as i8);
+    let digit_bias = _mm_set1_epi8(0xB0_u8 as i8);
+    let alpha_bias = _mm_set1_epi8(0xC1_u8 as i8);
     let case_mask = _mm_set1_epi8(0xDF_u8 as i8);
     let digit_threshold = _mm_set1_epi8(-118);
     let alpha_threshold = _mm_set1_epi8(-122);
 
     generic::check_unaligned_chunks(input, |chunk: __m128i| {
-        let x1 = _mm_sub_epi8(chunk, digit_end);
+        let x1 = _mm_sub_epi8(chunk, digit_bias);
         let m1 = _mm_cmpgt_epi8(digit_threshold, x1);
 
-        let x2 = _mm_sub_epi8(_mm_and_si128(chunk, case_mask), alpha_end);
+        let x2 = _mm_sub_epi8(_mm_and_si128(chunk, case_mask), alpha_bias);
         let m2 = _mm_cmpgt_epi8(alpha_threshold, x2);
 
         _mm_movemask_epi8(_mm_or_si128(m1, m2)) == 0xffff
