@@ -140,28 +140,41 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 
             _mm256_movemask_epi8(_mm256_or_si256(m1, m2)) == -1
         },
-        |remainder| check_sse2(remainder),
+        |remainder| {
+            if remainder.len() >= 16 {
+                if !check_chunk_sse2(remainder.as_ptr().cast()) {
+                    return false;
+                }
+                return generic::check(&remainder[16..]);
+            }
+            generic::check(remainder)
+        },
     )
 }
 
 /// See [`check_avx2`].
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
+    generic::check_unaligned_chunks(input, |chunk: __m128i| check_chunk_sse2(&chunk))
+}
+
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn check_chunk_sse2(chunk: *const __m128i) -> bool {
+    let chunk = _mm_loadu_si128(chunk);
     let digit_bias = _mm_set1_epi8(0xB0_u8 as i8);
     let alpha_bias = _mm_set1_epi8(0xC1_u8 as i8);
     let case_mask = _mm_set1_epi8(0xDF_u8 as i8);
     let digit_threshold = _mm_set1_epi8(-118);
     let alpha_threshold = _mm_set1_epi8(-122);
 
-    generic::check_unaligned_chunks(input, |chunk: __m128i| {
-        let x1 = _mm_sub_epi8(chunk, digit_bias);
-        let m1 = _mm_cmpgt_epi8(digit_threshold, x1);
+    let x1 = _mm_sub_epi8(chunk, digit_bias);
+    let m1 = _mm_cmpgt_epi8(digit_threshold, x1);
 
-        let x2 = _mm_sub_epi8(_mm_and_si128(chunk, case_mask), alpha_bias);
-        let m2 = _mm_cmpgt_epi8(alpha_threshold, x2);
+    let x2 = _mm_sub_epi8(_mm_and_si128(chunk, case_mask), alpha_bias);
+    let m2 = _mm_cmpgt_epi8(alpha_threshold, x2);
 
-        _mm_movemask_epi8(_mm_or_si128(m1, m2)) == 0xffff
-    })
+    _mm_movemask_epi8(_mm_or_si128(m1, m2)) == 0xffff
 }
 
 #[inline]
