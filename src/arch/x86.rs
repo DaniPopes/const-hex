@@ -103,15 +103,6 @@ unsafe fn encode_chunk_ssse3<const UPPER: bool>(input: __m128i) -> [__m128i; 2] 
     [_mm_shuffle_epi8(lut, out1), _mm_shuffle_epi8(lut, out2)]
 }
 
-#[inline]
-pub(crate) fn check(input: &[u8]) -> bool {
-    match () {
-        _ if has_avx2() => unsafe { check_avx2(input) },
-        _ if has_sse2() => unsafe { check_sse2(input) },
-        _ => generic::check(input),
-    }
-}
-
 /// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
 /// then a single `cmpgt(start + len, x)` checks if `x` falls within the range.
 ///
@@ -121,6 +112,15 @@ pub(crate) fn check(input: &[u8]) -> bool {
 ///
 /// Based on Muła & Langdale:
 /// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+#[inline]
+pub(crate) fn check(input: &[u8]) -> bool {
+    match () {
+        _ if has_avx2() => unsafe { check_avx2(input) },
+        _ if has_sse2() => unsafe { check_sse2(input) },
+        _ => generic::check(input),
+    }
+}
+
 #[target_feature(enable = "avx2")]
 unsafe fn check_avx2(input: &[u8]) -> bool {
     let digit_bias = _mm256_set1_epi8(0xB0_u8 as i8); // '0' + 0x80
@@ -144,7 +144,6 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
     )
 }
 
-/// See [`check_avx2`].
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
     generic::check_unaligned_chunks(input, |c| check_chunk_sse2(c))
