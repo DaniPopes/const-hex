@@ -72,19 +72,41 @@ unsafe fn encode_bytes32<const UPPER: bool>(input: __m256i) -> [__m256i; 2] {
 
 #[inline]
 pub(crate) fn check(input: &[u8]) -> bool {
-    if !has_sse2() {
-        return generic::check(input);
+    match () {
+        _ if has_avx2() => unsafe { check_avx2(input) },
+        _ if has_sse2() => unsafe { check_sse2(input) },
+        _ => generic::check(input),
     }
-    if has_avx2() {
-        return unsafe { check_avx2(input) };
-    }
-    unsafe { check_sse2(input) }
 }
 
 /// Hex check using signed overflow trick.
 ///
 /// Based on Muła & Langdale:
 /// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+#[target_feature(enable = "avx2")]
+unsafe fn check_avx2(input: &[u8]) -> bool {
+    let digit_end = _mm256_set1_epi8((0x30_u8.wrapping_add(0x80)) as i8);
+    let alpha_end = _mm256_set1_epi8((0x41_u8.wrapping_add(0x80)) as i8);
+    let case_mask = _mm256_set1_epi8(0xDF_u8 as i8);
+    let digit_threshold = _mm256_set1_epi8(-118);
+    let alpha_threshold = _mm256_set1_epi8(-122);
+
+    generic::check_unaligned_chunks_with(
+        input,
+        |chunk: __m256i| {
+            let x1 = _mm256_sub_epi8(chunk, digit_end);
+            let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
+
+            let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_end);
+            let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
+
+            _mm256_movemask_epi8(_mm256_or_si256(m1, m2)) == -1
+        },
+        |remainder| check_sse2(remainder),
+    )
+}
+
+/// See [`check_avx2`].
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
     let digit_end = _mm_set1_epi8((0x30_u8.wrapping_add(0x80)) as i8);
@@ -101,26 +123,6 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
         let m2 = _mm_cmpgt_epi8(alpha_threshold, x2);
 
         _mm_movemask_epi8(_mm_or_si128(m1, m2)) == 0xffff
-    })
-}
-
-/// See [`check_sse2`].
-#[target_feature(enable = "avx2")]
-unsafe fn check_avx2(input: &[u8]) -> bool {
-    let digit_end = _mm256_set1_epi8((0x30_u8.wrapping_add(0x80)) as i8);
-    let alpha_end = _mm256_set1_epi8((0x41_u8.wrapping_add(0x80)) as i8);
-    let case_mask = _mm256_set1_epi8(0xDF_u8 as i8);
-    let digit_threshold = _mm256_set1_epi8(-118);
-    let alpha_threshold = _mm256_set1_epi8(-122);
-
-    generic::check_unaligned_chunks(input, |chunk: __m256i| {
-        let x1 = _mm256_sub_epi8(chunk, digit_end);
-        let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
-
-        let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_end);
-        let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
-
-        _mm256_movemask_epi8(_mm256_or_si256(m1, m2)) == -1
     })
 }
 

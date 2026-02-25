@@ -58,8 +58,19 @@ pub(crate) fn check_unaligned_chunks<T: Copy>(
     input: &[u8],
     check_chunk: impl FnMut(T) -> bool,
 ) -> bool {
+    check_unaligned_chunks_with(input, check_chunk, check)
+}
+
+/// Like [`check_unaligned_chunks`], but with a custom remainder handler.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn check_unaligned_chunks_with<T: Copy>(
+    input: &[u8],
+    check_chunk: impl FnMut(T) -> bool,
+    check_remainder: impl FnOnce(&[u8]) -> bool,
+) -> bool {
     let (mut chunks, remainder) = chunks_unaligned(input);
-    chunks.all(check_chunk) && check(remainder)
+    chunks.all(check_chunk) && check_remainder(remainder)
 }
 
 /// Default checked decoding function.
