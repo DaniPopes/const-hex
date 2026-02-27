@@ -38,6 +38,52 @@ pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy
     unsafe { encode::<UPPER>(remainder, output) };
 }
 
+/// Encodes at most one `T`-sized chunk, then scalar remainder.
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn encode_one_unaligned_chunk<const UPPER: bool, T: Copy, U: Copy>(
+    input: &[u8],
+    mut output: impl Output,
+    encode_chunk: impl FnOnce(T) -> U,
+) {
+    debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
+    if input.len() >= size_of::<T>() {
+        let (l, r) = input.split_at(size_of::<T>());
+        let chunk = l.as_ptr().cast::<T>().read_unaligned();
+        output.write(as_bytes(&encode_chunk(chunk)));
+        encode::<UPPER>(r, output);
+    } else {
+        encode::<UPPER>(input, output);
+    }
+}
+
+/// Like [`encode_unaligned_chunks`], but with a custom remainder handler.
+///
+/// `encode_remainder` receives the remaining bytes and a mutable reference to the output
+/// offset past the already-written chunks.
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn encode_unaligned_chunks_with<
+    const UPPER: bool,
+    T: Copy,
+    U: Copy,
+    O: Output,
+>(
+    input: &[u8],
+    mut output: O,
+    mut encode_chunk: impl FnMut(T) -> U,
+    encode_remainder: impl FnOnce(&[u8], O),
+) {
+    debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
+    let (chunks, remainder) = chunks_unaligned::<T>(input);
+    for chunk in chunks {
+        output.write(as_bytes(&encode_chunk(chunk)));
+    }
+    if !remainder.is_empty() {
+        encode_remainder(remainder, output);
+    }
+}
+
 /// Default check function.
 #[inline]
 pub(crate) const fn check(mut input: &[u8]) -> bool {
@@ -58,8 +104,35 @@ pub(crate) fn check_unaligned_chunks<T: Copy>(
     input: &[u8],
     check_chunk: impl FnMut(T) -> bool,
 ) -> bool {
+    check_unaligned_chunks_with(input, check_chunk, check)
+}
+
+/// Checks at most one `T`-sized chunk, then scalar remainder.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn check_one_unaligned_chunk<T: Copy>(
+    input: &[u8],
+    check_chunk: impl FnOnce(T) -> bool,
+) -> bool {
+    if input.len() >= size_of::<T>() {
+        let (l, r) = input.split_at(size_of::<T>());
+        let chunk = unsafe { l.as_ptr().cast::<T>().read_unaligned() };
+        check_chunk(chunk) && check(r)
+    } else {
+        check(input)
+    }
+}
+
+/// Like [`check_unaligned_chunks`], but with a custom remainder handler.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn check_unaligned_chunks_with<T: Copy>(
+    input: &[u8],
+    check_chunk: impl FnMut(T) -> bool,
+    check_remainder: impl FnOnce(&[u8]) -> bool,
+) -> bool {
     let (mut chunks, remainder) = chunks_unaligned(input);
-    chunks.all(check_chunk) && check(remainder)
+    chunks.all(check_chunk) && (remainder.is_empty() || check_remainder(remainder))
 }
 
 /// Default checked decoding function.
