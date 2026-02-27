@@ -48,9 +48,10 @@ pub(crate) unsafe fn encode_one_unaligned_chunk<const UPPER: bool, T: Copy, U: C
 ) {
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
     if input.len() >= size_of::<T>() {
-        let chunk = input.as_ptr().cast::<T>().read_unaligned();
+        let (l, r) = input.split_at(size_of::<T>());
+        let chunk = l.as_ptr().cast::<T>().read_unaligned();
         output.write(as_bytes(&encode_chunk(chunk)));
-        encode::<UPPER>(&input[size_of::<T>()..], output);
+        encode::<UPPER>(r, output);
     } else {
         encode::<UPPER>(input, output);
     }
@@ -78,7 +79,9 @@ pub(crate) unsafe fn encode_unaligned_chunks_with<
     for chunk in chunks {
         output.write(as_bytes(&encode_chunk(chunk)));
     }
-    encode_remainder(remainder, output);
+    if !remainder.is_empty() {
+        encode_remainder(remainder, output);
+    }
 }
 
 /// Default check function.
