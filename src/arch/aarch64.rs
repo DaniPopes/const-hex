@@ -80,7 +80,7 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
 ///
 /// Converts ASCII hex to nibble values and validates simultaneously:
 /// - Digits '0'..'9' → 0..9, letters 'A'..'F'/'a'..'f' → 10..15 via saturation arithmetic.
-/// - Invalid bytes produce values > 15, detected via `adds(nibble, 112)` setting the MSB.
+/// - Invalid bytes produce values > 15, detected via `vqaddq_u8(nibble, 112)` setting the MSB.
 /// - Nibble pairs are merged with `vuzpq_u8` deinterleave + `(hi << 4) | lo`.
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
