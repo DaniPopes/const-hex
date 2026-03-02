@@ -206,6 +206,70 @@ pub(crate) unsafe fn decode_unchecked_unaligned_chunks<T: Copy, U: Copy>(
     unsafe { decode_unchecked(remainder, output) };
 }
 
+/// Checked-decodes unaligned chunks of `U` in `input` to `output` using `decode_chunk`.
+///
+/// Returns `false` on the first invalid chunk. The remainder is decoded using [`decode_checked`].
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn decode_checked_unaligned_chunks<T: Copy, U: Copy>(
+    input: &[u8],
+    output: impl Output,
+    decode_chunk: impl FnMut(U) -> Option<T>,
+) -> bool {
+    decode_checked_unaligned_chunks_with(input, output, decode_chunk, |remainder, out| unsafe {
+        decode_maybe_check::<true>(remainder, out)
+    })
+}
+
+/// Like [`decode_checked_unaligned_chunks`], but with a custom remainder handler.
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn decode_checked_unaligned_chunks_with<T: Copy, U: Copy, O: Output>(
+    input: &[u8],
+    mut output: O,
+    mut decode_chunk: impl FnMut(U) -> Option<T>,
+    decode_remainder: impl FnOnce(&[u8], O) -> bool,
+) -> bool {
+    debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
+    let (chunks, remainder) = chunks_unaligned::<U>(input);
+    for chunk in chunks {
+        match decode_chunk(chunk) {
+            Some(decoded) => output.write(as_bytes(&decoded)),
+            None => return false,
+        }
+    }
+    if !remainder.is_empty() {
+        decode_remainder(remainder, output)
+    } else {
+        true
+    }
+}
+
+/// Checked-decodes at most one `U`-sized chunk, then scalar remainder.
+#[inline]
+#[allow(dead_code)]
+pub(crate) unsafe fn decode_checked_one_unaligned_chunk<T: Copy, U: Copy>(
+    input: &[u8],
+    mut output: impl Output,
+    decode_chunk: impl FnOnce(U) -> Option<T>,
+) -> bool {
+    debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
+    if input.len() >= size_of::<U>() {
+        debug_assert!(input.len() < size_of::<U>() * 2);
+        let (l, r) = input.split_at(size_of::<U>());
+        let chunk = unsafe { l.as_ptr().cast::<U>().read_unaligned() };
+        match decode_chunk(chunk) {
+            Some(decoded) => {
+                output.write(as_bytes(&decoded));
+                unsafe { decode_maybe_check::<true>(r, output) }
+            }
+            None => false,
+        }
+    } else {
+        unsafe { decode_maybe_check::<true>(input, output) }
+    }
+}
+
 #[inline]
 fn chunks_unaligned<T: Copy>(input: &[u8]) -> (impl ExactSizeIterator<Item = T> + '_, &[u8]) {
     let chunks = input.chunks_exact(core::mem::size_of::<T>());
