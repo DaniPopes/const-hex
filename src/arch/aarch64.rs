@@ -104,20 +104,18 @@ unsafe fn decode_checked_neon(input: &[u8], output: &mut [u8]) -> bool {
     let ten = vdupq_n_u8(10);
     let check_bias = vdupq_n_u8(112); // 127 - 15
 
-    // Converts ASCII hex to nibble values via saturation arithmetic.
-    // Valid hex produces 0..15, invalid bytes produce values > 15.
-    let to_nibbles = |v: uint8x16_t| -> uint8x16_t {
-        // Digits '0'..'9' → 0..9, others > 15.
-        let d = vsubq_u8(vqsubq_u8(vaddq_u8(v, add_c6), six), f0);
-        // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
-        let a = vqaddq_u8(vsubq_u8(vandq_u8(v, df), big_a), ten);
-        // Valid nibble wins (0..15), invalid stays > 15.
-        vminq_u8(d, a)
-    };
-
     generic::decode_checked_unaligned_chunks(input, output, |[v0, v1]: [uint8x16_t; 2]| {
-        let n0 = to_nibbles(v0);
-        let n1 = to_nibbles(v1);
+        // Digits '0'..'9' → 0..9, others > 15.
+        let d0 = vsubq_u8(vqsubq_u8(vaddq_u8(v0, add_c6), six), f0);
+        let d1 = vsubq_u8(vqsubq_u8(vaddq_u8(v1, add_c6), six), f0);
+
+        // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
+        let a0 = vqaddq_u8(vsubq_u8(vandq_u8(v0, df), big_a), ten);
+        let a1 = vqaddq_u8(vsubq_u8(vandq_u8(v1, df), big_a), ten);
+
+        // Valid nibble wins (0..15), invalid stays > 15.
+        let n0 = vminq_u8(d0, a0);
+        let n1 = vminq_u8(d1, a1);
 
         // Validate: saturating add sets MSB if nibble > 15.
         let c = vorrq_u8(vqaddq_u8(n0, check_bias), vqaddq_u8(n1, check_bias));
