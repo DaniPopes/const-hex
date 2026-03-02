@@ -88,4 +88,31 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
 }
 
 pub(crate) use generic::decode_checked;
-pub(crate) use generic::decode_unchecked;
+
+#[inline]
+pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
+    if cfg!(miri) || !has_neon() {
+        return generic::decode_unchecked(input, output);
+    }
+    decode_unchecked_neon(input, output);
+}
+
+#[target_feature(enable = "neon")]
+unsafe fn decode_unchecked_neon(input: &[u8], output: &mut [u8]) {
+    generic::decode_unchecked_unaligned_chunks(input, output, |[v0, v1]: [uint8x16_t; 2]| {
+        let n0 = unhex_neon(v0);
+        let n1 = unhex_neon(v1);
+        let uz = vuzpq_u8(n0, n1);
+        vorrq_u8(vshlq_n_u8(uz.0, 4), uz.1)
+    });
+}
+
+/// Converts ASCII hex bytes to nibble values: `(x >> 6) * 9 + (x & 0x0F)`.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn unhex_neon(x: uint8x16_t) -> uint8x16_t {
+    let sr6 = vshrq_n_u8(x, 6);
+    let low = vandq_u8(x, vdupq_n_u8(0x0F));
+    let mul9 = vmulq_u8(sr6, vdupq_n_u8(9));
+    vaddq_u8(mul9, low)
+}
