@@ -53,9 +53,9 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
     generic::encode_unaligned_chunks_with::<UPPER, _, _, _>(
         input,
         output,
-        |av: __m256i| encode_chunk_avx2::<UPPER>(av),
+        |av| encode_chunk_avx2::<UPPER>(av),
         |remainder, out| {
-            generic::encode_one_unaligned_chunk::<UPPER, _, _>(remainder, out, |av: __m128i| {
+            generic::encode_one_unaligned_chunk::<UPPER, _, _>(remainder, out, |av| {
                 encode_chunk_ssse3::<UPPER>(av)
             })
         },
@@ -86,7 +86,7 @@ unsafe fn encode_chunk_avx2<const UPPER: bool>(input: __m256i) -> [__m256i; 2] {
 
 #[target_feature(enable = "ssse3")]
 unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |av: __m128i| {
+    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |av| {
         encode_chunk_ssse3::<UPPER>(av)
     });
 }
@@ -134,7 +134,7 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 
     generic::check_unaligned_chunks_with(
         input,
-        |chunk: __m256i| {
+        |chunk| {
             let x1 = _mm256_sub_epi8(chunk, digit_bias);
             let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
 
