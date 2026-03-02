@@ -257,67 +257,50 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> bool {
     let check_bias = _mm256_set1_epi8(112); // 127 - 15
     let weights = _mm256_set1_epi16(0x0110);
 
-    let in_ptr = input.as_ptr();
-    let out_ptr = output.as_mut_ptr();
-    let mut i = 0;
+    generic::decode_checked_unaligned_chunks_with(
+        input,
+        output,
+        |[v1, v2]: [__m256i; 2]| {
+            // Digits '0'..'9' → 0..9, others > 15.
+            let d1 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v1, add_c6), six), f0);
+            let d2 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v2, add_c6), six), f0);
 
-    while i + 64 <= input.len() {
-        let v1 = _mm256_loadu_si256(in_ptr.add(i).cast());
-        let v2 = _mm256_loadu_si256(in_ptr.add(i + 32).cast());
+            // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
+            let a1 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v1, df), big_a), ten);
+            let a2 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v2, df), big_a), ten);
 
-        // Digits '0'..'9' → 0..9, others > 15.
-        let d1 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v1, add_c6), six), f0);
-        let d2 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v2, add_c6), six), f0);
+            // Valid nibble wins (0..15), invalid stays > 15.
+            let n1 = _mm256_min_epu8(d1, a1);
+            let n2 = _mm256_min_epu8(d2, a2);
 
-        // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
-        let a1 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v1, df), big_a), ten);
-        let a2 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v2, df), big_a), ten);
+            // Validate: saturating add sets MSB if nibble > 15.
+            let c1 = _mm256_adds_epu8(n1, check_bias);
+            let c2 = _mm256_adds_epu8(n2, check_bias);
+            if _mm256_movemask_epi8(_mm256_or_si256(c1, c2)) != 0 {
+                return None;
+            }
 
-        // Valid nibble wins (0..15), invalid stays > 15.
-        let n1 = _mm256_min_epu8(d1, a1);
-        let n2 = _mm256_min_epu8(d2, a2);
+            // Merge nibble pairs: hi * 16 + lo.
+            let b1 = _mm256_maddubs_epi16(n1, weights);
+            let b2 = _mm256_maddubs_epi16(n2, weights);
+            let packed = _mm256_packus_epi16(b1, b2);
+            Some(_mm256_permute4x64_epi64(packed, 0b11_01_10_00))
+        },
+        |remainder, out| {
+            generic::decode_checked_one_unaligned_chunk(remainder, out, |v: __m256i| {
+                let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
+                let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
+                let n = _mm256_min_epu8(d, a);
 
-        // Validate: saturating add sets MSB if nibble > 15.
-        let c1 = _mm256_adds_epu8(n1, check_bias);
-        let c2 = _mm256_adds_epu8(n2, check_bias);
-        if _mm256_movemask_epi8(_mm256_or_si256(c1, c2)) != 0 {
-            return false;
-        }
+                if _mm256_movemask_epi8(_mm256_adds_epu8(n, check_bias)) != 0 {
+                    return None;
+                }
 
-        // Merge nibble pairs: hi * 16 + lo.
-        let b1 = _mm256_maddubs_epi16(n1, weights);
-        let b2 = _mm256_maddubs_epi16(n2, weights);
-        let packed = _mm256_packus_epi16(b1, b2);
-        let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-
-        _mm256_storeu_si256(out_ptr.add(i / 2).cast(), result);
-        i += 64;
-    }
-
-    // 32-byte remainder (one __m256i = 32 hex bytes → 16 output bytes).
-    if i + 32 <= input.len() {
-        let v = _mm256_loadu_si256(in_ptr.add(i).cast());
-
-        let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
-        let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
-        let n = _mm256_min_epu8(d, a);
-
-        if _mm256_movemask_epi8(_mm256_adds_epu8(n, check_bias)) != 0 {
-            return false;
-        }
-
-        let merged = _mm256_maddubs_epi16(n, weights);
-        let packed = _mm256_packus_epi16(merged, _mm256_setzero_si256());
-        let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-
-        // Store lower 16 bytes.
-        _mm_storeu_si128(out_ptr.add(i / 2).cast(), _mm256_castsi256_si128(result));
-        i += 32;
-    }
-
-    if i < input.len() {
-        generic::decode_checked(&input[i..], &mut output[i / 2..])
-    } else {
-        true
-    }
+                let merged = _mm256_maddubs_epi16(n, weights);
+                let packed = _mm256_packus_epi16(merged, _mm256_setzero_si256());
+                let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
+                Some(_mm256_castsi256_si128(result))
+            })
+        },
+    )
 }
