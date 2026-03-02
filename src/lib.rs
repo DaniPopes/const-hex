@@ -121,6 +121,47 @@ pub use buffer::Buffer;
 mod output;
 use output::Output;
 
+/// Result of a check or validated decode operation.
+///
+/// Stores `-1` for success, or the byte offset of the failing region on error.
+/// Slice indices cannot exceed `isize::MAX`, so the `usize` to `isize` cast is always safe.
+#[derive(Clone, Copy, Debug)]
+struct CheckResult(isize);
+
+#[allow(clippy::missing_const_for_fn)]
+impl CheckResult {
+    #[inline(always)]
+    const fn ok() -> Self {
+        Self(-1)
+    }
+
+    #[inline(always)]
+    const fn err(index: usize) -> Self {
+        Self(index as isize)
+    }
+
+    #[inline(always)]
+    const fn is_ok(self) -> bool {
+        self.0 < 0
+    }
+
+    /// Returns the error index.
+    #[inline(always)]
+    const fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    /// Adds `offset` to the error index if this is an error.
+    #[inline(always)]
+    fn offset(self, offset: usize) -> Self {
+        if self.is_ok() {
+            self
+        } else {
+            Self(self.0 + offset as isize)
+        }
+    }
+}
+
 /// The table of lowercase characters used for hex encoding.
 pub const HEX_CHARS_LOWER: &[u8; 16] = b"0123456789abcdef";
 
@@ -329,9 +370,11 @@ pub const fn const_check(input: &[u8]) -> Result<(), FromHexError> {
         return Err(FromHexError::OddLength);
     }
     let input = strip_prefix(input);
-    match generic::check(input) {
-        Ok(()) => Ok(()),
-        Err(valid_up_to) => Err(unsafe { invalid_hex_error(input, valid_up_to) }),
+    let result = generic::check(input);
+    if result.is_ok() {
+        Ok(())
+    } else {
+        Err(unsafe { invalid_hex_error(input, result.index()) })
     }
 }
 
@@ -380,15 +423,15 @@ pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
             return Err(FromHexError::OddLength);
         }
         let stripped = strip_prefix(input);
-        match imp::check(stripped) {
-            Ok(()) => Ok(()),
-            Err(valid_up_to) => {
-                let mut e = unsafe { invalid_hex_error(stripped, valid_up_to) };
-                if let FromHexError::InvalidHexCharacter { ref mut index, .. } = e {
-                    *index += input.len() - stripped.len();
-                }
-                Err(e)
+        let result = imp::check(stripped);
+        if result.is_ok() {
+            Ok(())
+        } else {
+            let mut e = unsafe { invalid_hex_error(stripped, result.index()) };
+            if let FromHexError::InvalidHexCharacter { ref mut index, .. } = e {
+                *index += input.len() - stripped.len();
             }
+            Err(e)
         }
     }
 
@@ -664,24 +707,24 @@ fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
 unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
     debug_assert_eq!(output.len(), input.len() / 2);
 
-    let valid_up_to = if imp::USE_CHECK_FN {
+    let result = if imp::USE_CHECK_FN {
         // Check then decode.
-        match imp::check(input) {
-            Ok(()) => {
-                unsafe { imp::decode_unchecked(input, output) };
-                return Ok(());
-            }
-            Err(i) => i,
+        let result = imp::check(input);
+        if result.is_ok() {
+            unsafe { imp::decode_unchecked(input, output) };
+            return Ok(());
         }
+        result
     } else {
         // Check and decode at the same time.
-        match unsafe { imp::decode_checked(input, output) } {
-            Ok(()) => return Ok(()),
-            Err(i) => i,
+        let result = unsafe { imp::decode_checked(input, output) };
+        if result.is_ok() {
+            return Ok(());
         }
+        result
     };
 
-    Err(unsafe { invalid_hex_error(input, valid_up_to) })
+    Err(unsafe { invalid_hex_error(input, result.index()) })
 }
 
 #[inline]

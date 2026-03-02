@@ -2,7 +2,7 @@
 #![allow(unexpected_cfgs)]
 
 use super::generic;
-use crate::{get_chars_table, Output};
+use crate::{get_chars_table, CheckResult, Output};
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
@@ -113,7 +113,7 @@ unsafe fn encode_chunk_ssse3<const UPPER: bool>(input: __m128i) -> [__m128i; 2] 
 /// Based on Muła & Langdale:
 /// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline]
-pub(crate) fn check(input: &[u8]) -> Result<(), usize> {
+pub(crate) fn check(input: &[u8]) -> CheckResult {
     match () {
         _ if has_avx2() => unsafe { check_avx2(input) },
         _ if has_sse2() => unsafe { check_sse2(input) },
@@ -122,7 +122,7 @@ pub(crate) fn check(input: &[u8]) -> Result<(), usize> {
 }
 
 #[target_feature(enable = "avx2")]
-unsafe fn check_avx2(input: &[u8]) -> Result<(), usize> {
+unsafe fn check_avx2(input: &[u8]) -> CheckResult {
     let digit_bias = _mm256_set1_epi8(0xB0_u8 as i8); // '0' + 0x80
     let alpha_bias = _mm256_set1_epi8(0xC1_u8 as i8); // 'A' + 0x80
     let case_mask = _mm256_set1_epi8(0xDF_u8 as i8);
@@ -145,7 +145,7 @@ unsafe fn check_avx2(input: &[u8]) -> Result<(), usize> {
 }
 
 #[target_feature(enable = "sse2")]
-unsafe fn check_sse2(input: &[u8]) -> Result<(), usize> {
+unsafe fn check_sse2(input: &[u8]) -> CheckResult {
     generic::check_unaligned_chunks(input, |c| check_chunk_sse2(c))
 }
 
@@ -234,7 +234,7 @@ unsafe fn nib2byte(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline]
-pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), usize> {
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> CheckResult {
     if has_avx2() {
         return decode_checked_avx2(input, output);
     }
@@ -242,7 +242,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(
 }
 
 #[target_feature(enable = "avx2")]
-unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> Result<(), usize> {
+unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> CheckResult {
     debug_assert_eq!(output.len(), input.len() / 2);
 
     let add_c6 = _mm256_set1_epi8(0xC6u8 as i8); // 0xFF - b'9'

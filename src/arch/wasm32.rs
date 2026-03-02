@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use super::generic;
-use crate::{get_chars_table, Output};
+use crate::{get_chars_table, CheckResult, Output};
 use core::arch::wasm32::*;
 
 pub(crate) const USE_CHECK_FN: bool = true;
@@ -50,7 +50,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 
 #[inline]
 #[target_feature(enable = "simd128")]
-pub(crate) fn check(input: &[u8]) -> Result<(), usize> {
+pub(crate) fn check(input: &[u8]) -> CheckResult {
     generic::check_unaligned_chunks(input, |chunk: v128| {
         let ge0 = u8x16_ge(chunk, u8x16_splat(b'0'));
         let le9 = u8x16_le(chunk, u8x16_splat(b'9'));

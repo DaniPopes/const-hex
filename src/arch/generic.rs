@@ -1,4 +1,4 @@
-use crate::{byte2hex, Output, HEX_DECODE_LUT, NIL};
+use crate::{byte2hex, CheckResult, Output, HEX_DECODE_LUT, NIL};
 use core::mem::size_of;
 
 /// Set to `true` to use `check` + `decode_unchecked` for decoding. Otherwise uses `decode_checked`.
@@ -87,31 +87,28 @@ pub(crate) unsafe fn encode_one_unaligned_chunk<const UPPER: bool, T: Copy, U: C
 
 /// Default check function.
 ///
-/// Returns `Ok(())` if all bytes are valid hex, or `Err(index)` with the index of the first
-/// invalid byte.
+/// Returns [`CheckResult::ok`] if all bytes are valid hex, or [`CheckResult::err`] with the index
+/// of the first invalid byte.
 #[inline]
-pub(crate) const fn check(input: &[u8]) -> Result<(), usize> {
+pub(crate) const fn check(input: &[u8]) -> CheckResult {
     let mut i = 0;
     while i < input.len() {
         if HEX_DECODE_LUT[input[i] as usize] == NIL {
-            return Err(i);
+            return CheckResult::err(i);
         }
         i += 1;
     }
-    Ok(())
+    CheckResult::ok()
 }
 
 /// Runs the given check function on unaligned chunks of `T` in `input`, with the remainder passed
 /// to the generic [`check`].
-///
-/// Returns `Ok(())` if all bytes are valid, or `Err(index)` with the byte offset of the start of
-/// the failing region.
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn check_unaligned_chunks<T: Copy>(
     input: &[u8],
     check_chunk: impl FnMut(T) -> bool,
-) -> Result<(), usize> {
+) -> CheckResult {
     check_unaligned_chunks_with(input, check_chunk, check)
 }
 
@@ -121,20 +118,20 @@ pub(crate) fn check_unaligned_chunks<T: Copy>(
 pub(crate) fn check_unaligned_chunks_with<T: Copy>(
     input: &[u8],
     mut check_chunk: impl FnMut(T) -> bool,
-    check_remainder: impl FnOnce(&[u8]) -> Result<(), usize>,
-) -> Result<(), usize> {
+    check_remainder: impl FnOnce(&[u8]) -> CheckResult,
+) -> CheckResult {
     let chunk_size = size_of::<T>();
     let (chunks, remainder) = chunks_unaligned(input);
     for (i, chunk) in chunks.enumerate() {
         if !check_chunk(chunk) {
-            return Err(i * chunk_size);
+            return CheckResult::err(i * chunk_size);
         }
     }
     if !remainder.is_empty() {
         let offset = input.len() - remainder.len();
-        check_remainder(remainder).map_err(|e| offset + e)
+        check_remainder(remainder).offset(offset)
     } else {
-        Ok(())
+        CheckResult::ok()
     }
 }
 
@@ -144,15 +141,15 @@ pub(crate) fn check_unaligned_chunks_with<T: Copy>(
 pub(crate) fn check_one_unaligned_chunk<T: Copy>(
     input: &[u8],
     check_chunk: impl FnOnce(T) -> bool,
-) -> Result<(), usize> {
+) -> CheckResult {
     if input.len() >= size_of::<T>() {
         debug_assert!(input.len() < size_of::<T>() * 2);
         let (l, r) = input.split_at(size_of::<T>());
         let chunk = unsafe { l.as_ptr().cast::<T>().read_unaligned() };
         if !check_chunk(chunk) {
-            return Err(0);
+            return CheckResult::err(0);
         }
-        check(r).map_err(|e| size_of::<T>() + e)
+        check(r).offset(size_of::<T>())
     } else {
         check(input)
     }
@@ -163,7 +160,7 @@ pub(crate) fn check_one_unaligned_chunk<T: Copy>(
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2`.
-pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), usize> {
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> CheckResult {
     unsafe { decode_maybe_check::<true>(input, output) }
 }
 
@@ -187,14 +184,14 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: impl Output) {
 unsafe fn decode_maybe_check<const CHECK: bool>(
     input: &[u8],
     mut output: impl Output,
-) -> Result<(), usize> {
+) -> CheckResult {
     macro_rules! next {
         ($var:ident, $i:expr) => {
             let hex = unsafe { *input.get_unchecked($i) };
             let $var = HEX_DECODE_LUT[hex as usize];
             if CHECK {
                 if $var == NIL {
-                    return Err($i);
+                    return CheckResult::err($i);
                 }
             }
         };
@@ -209,7 +206,7 @@ unsafe fn decode_maybe_check<const CHECK: bool>(
         output.write_byte(high << 4 | low);
         i += 1;
     }
-    Ok(())
+    CheckResult::ok()
 }
 
 /// Decodes unaligned chunks of `U` in `input` to `output` using `decode_chunk`.
@@ -232,7 +229,7 @@ pub(crate) unsafe fn decode_unchecked_unaligned_chunks<T: Copy, U: Copy>(
 
 /// Checked-decodes unaligned chunks of `U` in `input` to `output` using `decode_chunk`.
 ///
-/// Returns `Err(index)` on the first invalid chunk. The remainder is decoded using
+/// Returns [`CheckResult::err`] on the first invalid chunk. The remainder is decoded using
 /// [`decode_checked`].
 #[inline]
 #[allow(dead_code)]
@@ -240,7 +237,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<T: Copy, U: Copy>(
     input: &[u8],
     output: impl Output,
     decode_chunk: impl FnMut(U) -> Option<T>,
-) -> Result<(), usize> {
+) -> CheckResult {
     decode_checked_unaligned_chunks_with(input, output, decode_chunk, |remainder, out| unsafe {
         decode_maybe_check::<true>(remainder, out)
     })
@@ -253,22 +250,22 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks_with<T: Copy, U: Copy, O: O
     input: &[u8],
     mut output: O,
     mut decode_chunk: impl FnMut(U) -> Option<T>,
-    decode_remainder: impl FnOnce(&[u8], O) -> Result<(), usize>,
-) -> Result<(), usize> {
+    decode_remainder: impl FnOnce(&[u8], O) -> CheckResult,
+) -> CheckResult {
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
     let chunk_size = size_of::<U>();
     let (chunks, remainder) = chunks_unaligned::<U>(input);
     for (i, chunk) in chunks.enumerate() {
         match decode_chunk(chunk) {
             Some(decoded) => output.write(as_bytes(&decoded)),
-            None => return Err(i * chunk_size),
+            None => return CheckResult::err(i * chunk_size),
         }
     }
     if !remainder.is_empty() {
         let offset = input.len() - remainder.len();
-        decode_remainder(remainder, output).map_err(|e| offset + e)
+        decode_remainder(remainder, output).offset(offset)
     } else {
-        Ok(())
+        CheckResult::ok()
     }
 }
 
@@ -279,7 +276,7 @@ pub(crate) unsafe fn decode_checked_one_unaligned_chunk<T: Copy, U: Copy>(
     input: &[u8],
     mut output: impl Output,
     decode_chunk: impl FnOnce(U) -> Option<T>,
-) -> Result<(), usize> {
+) -> CheckResult {
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
     if input.len() >= size_of::<U>() {
         debug_assert!(input.len() < size_of::<U>() * 2);
@@ -288,9 +285,9 @@ pub(crate) unsafe fn decode_checked_one_unaligned_chunk<T: Copy, U: Copy>(
         match decode_chunk(chunk) {
             Some(decoded) => {
                 output.write(as_bytes(&decoded));
-                unsafe { decode_maybe_check::<true>(r, output) }.map_err(|e| size_of::<U>() + e)
+                unsafe { decode_maybe_check::<true>(r, output) }.offset(size_of::<U>())
             }
-            None => Err(0),
+            None => CheckResult::err(0),
         }
     } else {
         unsafe { decode_maybe_check::<true>(input, output) }

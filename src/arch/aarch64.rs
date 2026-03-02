@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use super::generic;
-use crate::{get_chars_table, Output};
+use crate::{get_chars_table, CheckResult, Output};
 use core::arch::aarch64::*;
 
 pub(crate) const USE_CHECK_FN: bool = true;
@@ -48,7 +48,7 @@ pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl O
 }
 
 #[inline]
-pub(crate) fn check(input: &[u8]) -> Result<(), usize> {
+pub(crate) fn check(input: &[u8]) -> CheckResult {
     if cfg!(miri) || !has_neon() {
         return generic::check(input);
     }
@@ -56,7 +56,7 @@ pub(crate) fn check(input: &[u8]) -> Result<(), usize> {
 }
 
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn check_neon(input: &[u8]) -> Result<(), usize> {
+pub(crate) unsafe fn check_neon(input: &[u8]) -> CheckResult {
     generic::check_unaligned_chunks(input, |chunk: uint8x16_t| {
         let ge0 = vcgeq_u8(chunk, vdupq_n_u8(b'0'));
         let le9 = vcleq_u8(chunk, vdupq_n_u8(b'9'));

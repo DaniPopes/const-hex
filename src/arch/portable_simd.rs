@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use super::generic;
-use crate::{get_chars_table, Output};
+use crate::{get_chars_table, CheckResult, Output};
 use core::simd::prelude::*;
 
 type Simd = u8x16;
@@ -27,7 +27,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
     });
 }
 
-pub(crate) fn check(input: &[u8]) -> Result<(), usize> {
+pub(crate) fn check(input: &[u8]) -> CheckResult {
     generic::check_unaligned_chunks(input, |chunk: Simd| {
         let valid_digit = chunk.simd_ge(Simd::splat(b'0')) & chunk.simd_le(Simd::splat(b'9'));
         let valid_upper = chunk.simd_ge(Simd::splat(b'A')) & chunk.simd_le(Simd::splat(b'F'));
