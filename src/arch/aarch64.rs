@@ -55,35 +55,24 @@ pub(crate) fn check(input: &[u8]) -> bool {
     unsafe { check_neon(input) }
 }
 
-/// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
-/// then a single `cmpgt(start + len, x)` checks if `x` falls within the range.
-///
-/// - Digits '0'..'9' (0x30..0x39): bias by 0xB0 maps to -128..-119, threshold -118 (10 values).
-/// - Letters 'A'..'F' (0x41..0x46): bias by 0xC1 maps to -128..-123, threshold -122 (6 values).
-///   Case folded with 0xDF mask so 'a'..'f' is handled identically.
-///
-/// Based on Muła & Langdale:
-/// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
-    let digit_bias = vdupq_n_s8(0xB0_u8 as i8);
-    let alpha_bias = vdupq_n_s8(0xC1_u8 as i8);
-    let case_mask = vdupq_n_u8(0xDF);
-    let digit_threshold = vdupq_n_s8(-118); // i8::MIN + 10
-    let alpha_threshold = vdupq_n_s8(-122); // i8::MIN + 6
-
     generic::check_unaligned_chunks(input, |chunk: uint8x16_t| {
-        let chunk_s = vreinterpretq_s8_u8(chunk);
+        let ge0 = vcgeq_u8(chunk, vdupq_n_u8(b'0'));
+        let le9 = vcleq_u8(chunk, vdupq_n_u8(b'9'));
+        let valid_digit = vandq_u8(ge0, le9);
 
-        let x1 = vsubq_s8(chunk_s, digit_bias);
-        let m1 = vcgtq_s8(digit_threshold, x1);
+        let geua = vcgeq_u8(chunk, vdupq_n_u8(b'A'));
+        let leuf = vcleq_u8(chunk, vdupq_n_u8(b'F'));
+        let valid_upper = vandq_u8(geua, leuf);
 
-        let folded = vreinterpretq_s8_u8(vandq_u8(chunk, case_mask));
-        let x2 = vsubq_s8(folded, alpha_bias);
-        let m2 = vcgtq_s8(alpha_threshold, x2);
+        let gela = vcgeq_u8(chunk, vdupq_n_u8(b'a'));
+        let lelf = vcleq_u8(chunk, vdupq_n_u8(b'f'));
+        let valid_lower = vandq_u8(gela, lelf);
 
-        let valid = vorrq_u8(m1, m2);
-        vminvq_u8(valid) == 0xFF
+        let valid_letter = vorrq_u8(valid_lower, valid_upper);
+        let valid_mask = vorrq_u8(valid_digit, valid_letter);
+        vminvq_u8(valid_mask) == 0xFF
     })
 }
 
