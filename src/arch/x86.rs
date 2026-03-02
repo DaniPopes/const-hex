@@ -257,23 +257,21 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> bool {
     let check_bias = _mm256_set1_epi8(112); // 127 - 15
     let weights = _mm256_set1_epi16(0x0110);
 
-    // Converts ASCII hex to nibble values via saturation arithmetic.
-    // Valid hex produces 0..15, invalid bytes produce values > 15.
-    let to_nibbles = |v: __m256i| -> __m256i {
-        // Digits '0'..'9' → 0..9, others > 15.
-        let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
-        // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
-        let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
-        // Valid nibble wins (0..15), invalid stays > 15.
-        _mm256_min_epu8(d, a)
-    };
-
     generic::decode_checked_unaligned_chunks_with(
         input,
         output,
         |[v1, v2]: [__m256i; 2]| {
-            let n1 = to_nibbles(v1);
-            let n2 = to_nibbles(v2);
+            // Digits '0'..'9' → 0..9, others > 15.
+            let d1 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v1, add_c6), six), f0);
+            let d2 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v2, add_c6), six), f0);
+
+            // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
+            let a1 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v1, df), big_a), ten);
+            let a2 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v2, df), big_a), ten);
+
+            // Valid nibble wins (0..15), invalid stays > 15.
+            let n1 = _mm256_min_epu8(d1, a1);
+            let n2 = _mm256_min_epu8(d2, a2);
 
             // Validate: saturating add sets MSB if nibble > 15.
             let c1 = _mm256_adds_epu8(n1, check_bias);
@@ -290,7 +288,9 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> bool {
         },
         |remainder, out| {
             generic::decode_checked_one_unaligned_chunk(remainder, out, |v: __m256i| {
-                let n = to_nibbles(v);
+                let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
+                let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
+                let n = _mm256_min_epu8(d, a);
 
                 if _mm256_movemask_epi8(_mm256_adds_epu8(n, check_bias)) != 0 {
                     return None;
