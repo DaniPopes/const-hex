@@ -329,10 +329,9 @@ pub const fn const_check(input: &[u8]) -> Result<(), FromHexError> {
         return Err(FromHexError::OddLength);
     }
     let input = strip_prefix(input);
-    if const_check_raw(input) {
-        Ok(())
-    } else {
-        Err(unsafe { invalid_hex_error(input) })
+    match generic::check(input) {
+        Ok(()) => Ok(()),
+        Err(valid_up_to) => Err(unsafe { invalid_hex_error(input, valid_up_to) }),
     }
 }
 
@@ -359,7 +358,7 @@ pub const fn const_check(input: &[u8]) -> Result<(), FromHexError> {
 /// ```
 #[inline]
 pub const fn const_check_raw(input: &[u8]) -> bool {
-    generic::check(input)
+    generic::check(input).is_ok()
 }
 
 /// Returns `true` if the input is a valid hex string and can be decoded successfully.
@@ -381,14 +380,15 @@ pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
             return Err(FromHexError::OddLength);
         }
         let stripped = strip_prefix(input);
-        if imp::check(stripped) {
-            Ok(())
-        } else {
-            let mut e = unsafe { invalid_hex_error(stripped) };
-            if let FromHexError::InvalidHexCharacter { ref mut index, .. } = e {
-                *index += input.len() - stripped.len();
+        match imp::check(stripped) {
+            Ok(()) => Ok(()),
+            Err(valid_up_to) => {
+                let mut e = unsafe { invalid_hex_error(stripped, valid_up_to) };
+                if let FromHexError::InvalidHexCharacter { ref mut index, .. } = e {
+                    *index += input.len() - stripped.len();
+                }
+                Err(e)
             }
-            Err(e)
         }
     }
 
@@ -414,7 +414,7 @@ pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
 /// ```
 #[inline]
 pub fn check_raw<T: AsRef<[u8]>>(input: T) -> bool {
-    imp::check(input.as_ref())
+    imp::check(input.as_ref()).is_ok()
 }
 
 /// Decode a hex string into a fixed-length byte-array.
@@ -454,7 +454,7 @@ pub const fn const_decode_to_array<const N: usize>(input: &[u8]) -> Result<[u8; 
     }
     match const_decode_to_array_impl(input) {
         Some(output) => Ok(output),
-        None => Err(unsafe { invalid_hex_error(input) }),
+        None => Err(unsafe { invalid_hex_error(input, 0) }),
     }
 }
 
@@ -664,20 +664,24 @@ fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
 unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
     debug_assert_eq!(output.len(), input.len() / 2);
 
-    if imp::USE_CHECK_FN {
+    let valid_up_to = if imp::USE_CHECK_FN {
         // Check then decode.
-        if imp::check(input) {
-            unsafe { imp::decode_unchecked(input, output) };
-            return Ok(());
+        match imp::check(input) {
+            Ok(()) => {
+                unsafe { imp::decode_unchecked(input, output) };
+                return Ok(());
+            }
+            Err(i) => i,
         }
     } else {
         // Check and decode at the same time.
-        if unsafe { imp::decode_checked(input, output) } {
-            return Ok(());
+        match unsafe { imp::decode_checked(input, output) } {
+            Ok(()) => return Ok(()),
+            Err(i) => i,
         }
-    }
+    };
 
-    Err(unsafe { invalid_hex_error(input) })
+    Err(unsafe { invalid_hex_error(input, valid_up_to) })
 }
 
 #[inline]
@@ -700,19 +704,19 @@ const fn strip_prefix(bytes: &[u8]) -> &[u8] {
 ///
 /// # Safety
 ///
-/// Assumes `input` contains at least one invalid character.
+/// Assumes `input[valid_up_to..]` contains at least one invalid character.
 #[cold]
 #[cfg_attr(debug_assertions, track_caller)]
-const unsafe fn invalid_hex_error(input: &[u8]) -> FromHexError {
-    // Find the first invalid character.
+const unsafe fn invalid_hex_error(input: &[u8], valid_up_to: usize) -> FromHexError {
+    // Find the first invalid character, starting from the hint position.
     let mut index = None;
-    let mut iter = input;
-    while let [byte, rest @ ..] = iter {
-        if HEX_DECODE_LUT[*byte as usize] == NIL {
-            index = Some(input.len() - rest.len() - 1);
+    let mut i = valid_up_to;
+    while i < input.len() {
+        if HEX_DECODE_LUT[input[i] as usize] == NIL {
+            index = Some(i);
             break;
         }
-        iter = rest;
+        i += 1;
     }
 
     let index = match index {

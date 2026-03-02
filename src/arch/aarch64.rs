@@ -48,7 +48,7 @@ pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl O
 }
 
 #[inline]
-pub(crate) fn check(input: &[u8]) -> bool {
+pub(crate) fn check(input: &[u8]) -> Result<(), usize> {
     if cfg!(miri) || !has_neon() {
         return generic::check(input);
     }
@@ -56,7 +56,7 @@ pub(crate) fn check(input: &[u8]) -> bool {
 }
 
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
+pub(crate) unsafe fn check_neon(input: &[u8]) -> Result<(), usize> {
     generic::check_unaligned_chunks(input, |chunk: uint8x16_t| {
         let ge0 = vcgeq_u8(chunk, vdupq_n_u8(b'0'));
         let le9 = vcleq_u8(chunk, vdupq_n_u8(b'9'));
