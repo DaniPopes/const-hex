@@ -288,8 +288,7 @@ pub(crate) unsafe fn decode_checked_one_unaligned_chunk<T: Copy, U: Copy>(
         match decode_chunk(chunk) {
             Some(decoded) => {
                 output.write(as_bytes(&decoded));
-                unsafe { decode_maybe_check::<true>(r, output) }
-                    .map_err(|e| size_of::<U>() + e)
+                unsafe { decode_maybe_check::<true>(r, output) }.map_err(|e| size_of::<U>() + e)
             }
             None => Err(0),
         }
