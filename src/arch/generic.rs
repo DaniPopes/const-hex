@@ -142,6 +142,7 @@ pub(crate) fn check_one_unaligned_chunk<T: Copy>(
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2`.
+#[allow(dead_code)]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
     unsafe { decode_maybe_check::<true>(input, output) }
 }
