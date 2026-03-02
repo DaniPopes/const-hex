@@ -311,10 +311,7 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> bool {
         let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
         // Store lower 16 bytes.
-        _mm_storeu_si128(
-            out_ptr.add(i / 2).cast(),
-            _mm256_castsi256_si128(result),
-        );
+        _mm_storeu_si128(out_ptr.add(i / 2).cast(), _mm256_castsi256_si128(result));
         i += 32;
     }
 
