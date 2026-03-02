@@ -294,6 +294,30 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> bool {
         i += 64;
     }
 
+    // 32-byte remainder (one __m256i = 32 hex bytes → 16 output bytes).
+    if i + 32 <= input.len() {
+        let v = _mm256_loadu_si256(in_ptr.add(i).cast());
+
+        let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
+        let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
+        let n = _mm256_min_epu8(d, a);
+
+        if _mm256_movemask_epi8(_mm256_adds_epu8(n, check_bias)) != 0 {
+            return false;
+        }
+
+        let merged = _mm256_maddubs_epi16(n, weights);
+        let packed = _mm256_packus_epi16(merged, _mm256_setzero_si256());
+        let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
+
+        // Store lower 16 bytes.
+        _mm_storeu_si128(
+            out_ptr.add(i / 2).cast(),
+            _mm256_castsi256_si128(result),
+        );
+        i += 32;
+    }
+
     if i < input.len() {
         generic::decode_checked(&input[i..], &mut output[i / 2..])
     } else {
