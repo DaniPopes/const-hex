@@ -453,18 +453,18 @@ pub const fn const_decode_to_array<const N: usize>(input: &[u8]) -> Result<[u8; 
         return Err(FromHexError::InvalidStringLength);
     }
     match const_decode_to_array_impl(input) {
-        Some(output) => Ok(output),
-        None => Err(unsafe { invalid_hex_error(input, 0) }),
+        Ok(output) => Ok(output),
+        Err(valid_up_to) => Err(unsafe { invalid_hex_error(input, valid_up_to) }),
     }
 }
 
-const fn const_decode_to_array_impl<const N: usize>(input: &[u8]) -> Option<[u8; N]> {
+const fn const_decode_to_array_impl<const N: usize>(input: &[u8]) -> Result<[u8; N], usize> {
     macro_rules! next {
         ($var:ident, $i:expr) => {
             let hex = unsafe { *input.as_ptr().add($i) };
             let $var = HEX_DECODE_LUT[hex as usize];
             if $var == NIL {
-                return None;
+                return Err($i);
             }
         };
     }
@@ -478,7 +478,7 @@ const fn const_decode_to_array_impl<const N: usize>(input: &[u8]) -> Option<[u8;
         output[i] = high << 4 | low;
         i += 1;
     }
-    Some(output)
+    Ok(output)
 }
 
 /// Decodes a hex string into raw bytes.

@@ -164,11 +164,7 @@ pub(crate) fn check_one_unaligned_chunk<T: Copy>(
 ///
 /// Assumes `output.len() == input.len() / 2`.
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), usize> {
-    if unsafe { decode_maybe_check::<true>(input, output) } {
-        Ok(())
-    } else {
-        Err(0)
-    }
+    unsafe { decode_maybe_check::<true>(input, output) }
 }
 
 /// Default unchecked decoding function.
@@ -178,8 +174,8 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex.
 pub(crate) unsafe fn decode_unchecked(input: &[u8], output: impl Output) {
     #[allow(unused_braces)] // False positive on older rust versions.
-    let success = unsafe { decode_maybe_check::<{ cfg!(debug_assertions) }>(input, output) };
-    debug_assert!(success);
+    let result = unsafe { decode_maybe_check::<{ cfg!(debug_assertions) }>(input, output) };
+    debug_assert!(result.is_ok());
 }
 
 /// Default decoding function. Checks input validity if `CHECK` is `true`, otherwise assumes it.
@@ -188,14 +184,17 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: impl Output) {
 ///
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex if `CHECK` is `true`.
 #[inline(always)]
-unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], mut output: impl Output) -> bool {
+unsafe fn decode_maybe_check<const CHECK: bool>(
+    input: &[u8],
+    mut output: impl Output,
+) -> Result<(), usize> {
     macro_rules! next {
         ($var:ident, $i:expr) => {
             let hex = unsafe { *input.get_unchecked($i) };
             let $var = HEX_DECODE_LUT[hex as usize];
             if CHECK {
                 if $var == NIL {
-                    return false;
+                    return Err($i);
                 }
             }
         };
@@ -210,7 +209,7 @@ unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], mut output: impl O
         output.write_byte(high << 4 | low);
         i += 1;
     }
-    true
+    Ok(())
 }
 
 /// Decodes unaligned chunks of `U` in `input` to `output` using `decode_chunk`.
@@ -242,12 +241,8 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<T: Copy, U: Copy>(
     output: impl Output,
     decode_chunk: impl FnMut(U) -> Option<T>,
 ) -> Result<(), usize> {
-    decode_checked_unaligned_chunks_with(input, output, decode_chunk, |remainder, out| {
-        if unsafe { decode_maybe_check::<true>(remainder, out) } {
-            Ok(())
-        } else {
-            Err(0)
-        }
+    decode_checked_unaligned_chunks_with(input, output, decode_chunk, |remainder, out| unsafe {
+        decode_maybe_check::<true>(remainder, out)
     })
 }
 
@@ -293,18 +288,13 @@ pub(crate) unsafe fn decode_checked_one_unaligned_chunk<T: Copy, U: Copy>(
         match decode_chunk(chunk) {
             Some(decoded) => {
                 output.write(as_bytes(&decoded));
-                if unsafe { decode_maybe_check::<true>(r, output) } {
-                    Ok(())
-                } else {
-                    Err(size_of::<U>())
-                }
+                unsafe { decode_maybe_check::<true>(r, output) }
+                    .map_err(|e| size_of::<U>() + e)
             }
             None => Err(0),
         }
-    } else if unsafe { decode_maybe_check::<true>(input, output) } {
-        Ok(())
     } else {
-        Err(0)
+        unsafe { decode_maybe_check::<true>(input, output) }
     }
 }
 
