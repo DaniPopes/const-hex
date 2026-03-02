@@ -165,24 +165,17 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: impl Output) {
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex if `CHECK` is `true`.
 #[inline(always)]
 unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], mut output: impl Output) -> bool {
-    macro_rules! next {
-        ($var:ident, $i:expr) => {
-            let hex = unsafe { *input.get_unchecked($i) };
-            let $var = HEX_DECODE_LUT[hex as usize];
-            if CHECK {
-                if $var == NIL {
-                    return false;
-                }
-            }
-        };
-    }
-
     let l = output.remaining().unwrap_or(input.len() / 2);
     debug_assert_eq!(l, input.len() / 2);
     let mut i = 0;
     while i < l {
-        next!(high, i * 2);
-        next!(low, i * 2 + 1);
+        let hex = unsafe { *input.get_unchecked(i * 2) };
+        let high = HEX_DECODE_LUT[hex as usize];
+        let hex = unsafe { *input.get_unchecked(i * 2 + 1) };
+        let low = HEX_DECODE_LUT[hex as usize];
+        if CHECK && (low | high) == NIL {
+            return false;
+        }
         output.write_byte(high << 4 | low);
         i += 1;
     }
