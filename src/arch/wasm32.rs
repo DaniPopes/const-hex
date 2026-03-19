@@ -3,6 +3,7 @@
 use super::generic;
 use crate::{get_chars_table, Output};
 use core::arch::wasm32::*;
+use core::mem::MaybeUninit;
 
 pub(crate) const USE_CHECK_FN: bool = false;
 
@@ -80,7 +81,7 @@ pub(crate) fn check(input: &[u8]) -> bool {
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline]
 #[target_feature(enable = "simd128")]
-pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     debug_assert_eq!(output.len(), input.len() / 2);
 
     let add_c6 = u8x16_splat(0xC6); // 0xFF - b'9'
@@ -121,7 +122,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
 
 #[inline]
 #[target_feature(enable = "simd128")]
-pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
+pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [MaybeUninit<u8>]) {
     generic::decode_unchecked_unaligned_chunks(input, output, |[v0, v1]: [v128; 2]| {
         let n0 = unhex(v0);
         let n1 = unhex(v1);

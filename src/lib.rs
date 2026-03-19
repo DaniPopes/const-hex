@@ -53,6 +53,7 @@
 extern crate alloc;
 
 use cfg_if::cfg_if;
+use core::mem::MaybeUninit;
 
 #[cfg(feature = "alloc")]
 #[allow(unused_imports)]
@@ -520,14 +521,14 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
         // Do not initialize memory since it will be entirely overwritten.
         let len = input.len() / 2;
         let mut output = Vec::with_capacity(len);
-        // SAFETY: The entire vec is never read from, and gets dropped if decoding fails.
-        #[allow(clippy::uninit_vec)]
+
+        // SAFETY: `decode_checked` fully writes `len` bytes on success,
+        // then `set_len` is called only after successful decode.
         unsafe {
+            decode_checked(input, &mut output.spare_capacity_mut()[..len])?;
             output.set_len(len);
         }
-
-        // SAFETY: Lengths are checked above.
-        unsafe { decode_checked(input, &mut output) }.map(|()| output)
+        Ok(output)
     }
 
     decode_inner(input.as_ref())
@@ -558,7 +559,7 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
 /// ```
 #[inline]
 pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<(), FromHexError> {
-    decode_to_slice_inner(input.as_ref(), output)
+    decode_to_slice_inner(input.as_ref(), impl_core::slice_as_uninit_mut(output))
 }
 
 /// Decode a hex string into a fixed-length byte-array.
@@ -587,11 +588,9 @@ pub fn decode_to_slice<T: AsRef<[u8]>>(input: T, output: &mut [u8]) -> Result<()
 pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; N], FromHexError> {
     fn decode_to_array_inner<const N: usize>(input: &[u8]) -> Result<[u8; N], FromHexError> {
         let mut output = impl_core::uninit_array();
-        // SAFETY: The entire array is never read from.
-        let output_slice = unsafe { impl_core::slice_assume_init_mut(&mut output) };
-        // SAFETY: All elements are initialized.
-        decode_to_slice_inner(input, output_slice)
-            .map(|()| unsafe { impl_core::array_assume_init(output) })
+        decode_to_slice_inner(input, &mut output)?;
+        // SAFETY: All elements are initialized by successful decode.
+        Ok(unsafe { impl_core::array_assume_init(output) })
     }
 
     decode_to_array_inner(input.as_ref())
@@ -601,24 +600,26 @@ pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; 
 fn encode_inner<const UPPER: bool, const PREFIX: bool>(data: &[u8]) -> String {
     let capacity = PREFIX as usize * 2 + data.len() * 2;
     let mut buf = Vec::<u8>::with_capacity(capacity);
-    // SAFETY: The entire vec is never read from, and gets dropped if decoding fails.
-    #[allow(clippy::uninit_vec)]
-    unsafe {
-        buf.set_len(capacity)
-    };
-    let mut output = buf.as_mut_slice();
+
+    // SAFETY: `spare_capacity_mut` returns uninitialized memory which is fully
+    // written to by the prefix write and `imp::encode`, then `set_len` commits.
+    let mut output = &mut buf.spare_capacity_mut()[..capacity];
     if PREFIX {
         // SAFETY: `output` is long enough.
         unsafe {
-            *output.get_unchecked_mut(0) = b'0';
-            *output.get_unchecked_mut(1) = b'x';
+            output.get_unchecked_mut(0).write(b'0');
+            output.get_unchecked_mut(1).write(b'x');
             output = output.get_unchecked_mut(2..);
         }
     }
-    // SAFETY: `output` is long enough (input.len() * 2).
-    unsafe { imp::encode::<UPPER>(data, output) };
-    // SAFETY: We only write only ASCII bytes.
-    unsafe { String::from_utf8_unchecked(buf) }
+    // SAFETY: `output` is long enough (data.len() * 2), `encode` fully writes all bytes,
+    // then `set_len` is called only after successful encode.
+    // We only write ASCII bytes, which are valid UTF-8.
+    unsafe {
+        imp::encode::<UPPER>(data, output);
+        buf.set_len(capacity);
+        String::from_utf8_unchecked(buf)
+    }
 }
 
 fn encode_to_slice_inner<const UPPER: bool>(
@@ -645,7 +646,7 @@ fn encode_to_str_inner<'o, const UPPER: bool>(
     Ok(s)
 }
 
-fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+fn decode_to_slice_inner(input: &[u8], output: &mut [MaybeUninit<u8>]) -> Result<(), FromHexError> {
     if unlikely(input.len() % 2 != 0) {
         return Err(FromHexError::OddLength);
     }
@@ -661,7 +662,7 @@ fn decode_to_slice_inner(input: &[u8], output: &mut [u8]) -> Result<(), FromHexE
 ///
 /// Assumes `output.len() == input.len() / 2`.
 #[inline]
-unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> Result<(), FromHexError> {
+unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> Result<(), FromHexError> {
     debug_assert_eq!(output.len(), input.len() / 2);
 
     if imp::USE_CHECK_FN {

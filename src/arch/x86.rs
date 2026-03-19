@@ -3,6 +3,7 @@
 
 use super::generic;
 use crate::{get_chars_table, Output};
+use core::mem::MaybeUninit;
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
@@ -171,7 +172,7 @@ unsafe fn check_chunk_sse2(chunk: __m128i) -> bool {
 }
 
 #[inline]
-pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
+pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [MaybeUninit<u8>]) {
     if !has_avx2() {
         return generic::decode_unchecked(input, output);
     }
@@ -179,7 +180,7 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
 }
 
 #[target_feature(enable = "avx2")]
-unsafe fn decode_avx2(input: &[u8], output: &mut [u8]) {
+unsafe fn decode_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) {
     #[rustfmt::skip]
     let mask_a = _mm256_setr_epi8(
         0, -1, 2, -1, 4, -1, 6, -1, 8, -1, 10, -1, 12, -1, 14, -1,
@@ -237,7 +238,7 @@ unsafe fn nib2byte(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline]
-pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     if has_avx2() {
         return decode_checked_avx2(input, output);
     }
@@ -245,7 +246,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
 }
 
 #[target_feature(enable = "avx2")]
-unsafe fn decode_checked_avx2(input: &[u8], output: &mut [u8]) -> bool {
+unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     debug_assert_eq!(output.len(), input.len() / 2);
 
     let add_c6 = _mm256_set1_epi8(0xC6u8 as i8); // 0xFF - b'9'
