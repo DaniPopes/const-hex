@@ -1,5 +1,5 @@
 use crate::{byte2hex, Output, HEX_DECODE_LUT, NIL};
-use core::mem::size_of;
+use core::mem::{size_of, MaybeUninit};
 
 /// Set to `true` to use `check` + `decode_unchecked` for decoding. Otherwise uses `decode_checked`.
 ///
@@ -143,7 +143,7 @@ pub(crate) fn check_one_unaligned_chunk<T: Copy>(
 ///
 /// Assumes `output.len() == input.len() / 2`.
 #[allow(dead_code)]
-pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     unsafe { decode_maybe_check::<true>(input, output) }
 }
 
