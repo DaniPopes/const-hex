@@ -23,7 +23,11 @@
     feature(core_intrinsics, inline_const),
     allow(internal_features, stable_features)
 )]
-#![cfg_attr(feature = "portable-simd", feature(portable_simd))]
+#![cfg_attr(
+    feature = "portable-simd",
+    feature(portable_simd),
+    allow(unused_features)
+)]
 #![warn(
     missing_copy_implementations,
     missing_debug_implementations,
