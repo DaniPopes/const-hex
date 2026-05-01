@@ -318,6 +318,7 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// const _: () = {
 ///     assert!(const_hex::const_check(b"48656c6c6f20776f726c6421").is_ok());
 ///     assert!(const_hex::const_check(b"0x48656c6c6f20776f726c6421").is_ok());
+///     assert!(const_hex::const_check(b"0X48656C6C6F20776F726C6421").is_ok());
 ///
 ///     assert!(const_hex::const_check(b"48656c6c6f20776f726c642").is_err());
 ///     assert!(const_hex::const_check(b"Hello world!").is_err());
@@ -369,6 +370,7 @@ pub const fn const_check_raw(input: &[u8]) -> bool {
 /// ```
 /// assert!(const_hex::check("48656c6c6f20776f726c6421").is_ok());
 /// assert!(const_hex::check("0x48656c6c6f20776f726c6421").is_ok());
+/// assert!(const_hex::check("0X48656C6C6F20776F726C6421").is_ok());
 ///
 /// assert!(const_hex::check("48656c6c6f20776f726c642").is_err());
 /// assert!(const_hex::check("Hello world!").is_err());
@@ -440,6 +442,9 @@ pub fn check_raw<T: AsRef<[u8]>>(input: T) -> bool {
 ///     assert!(matches!(bytes.as_ref(), Ok(b"kiwi")));
 ///
 ///     let bytes = const_hex::const_decode_to_array(b"0x6b697769");
+///     assert!(matches!(bytes.as_ref(), Ok(b"kiwi")));
+///
+///     let bytes = const_hex::const_decode_to_array(b"0X6B697769");
 ///     assert!(matches!(bytes.as_ref(), Ok(b"kiwi")));
 /// };
 /// ```
@@ -691,7 +696,7 @@ const fn byte2hex<const UPPER: bool>(byte: u8) -> (u8, u8) {
 #[inline]
 const fn strip_prefix(bytes: &[u8]) -> &[u8] {
     match bytes {
-        [b'0', b'x', rest @ ..] => rest,
+        [b'0', b'x' | b'X', rest @ ..] => rest,
         _ => bytes,
     }
 }
