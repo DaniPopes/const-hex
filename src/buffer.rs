@@ -69,7 +69,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
         let () = Self::ASSERT_SIZE;
         let () = Self::ASSERT_ALIGNMENT;
         Self {
-            prefix: if PREFIX { [b'0', b'x'] } else { [0, 0] },
+            prefix: if PREFIX { *b"0x" } else { [0, 0] },
             bytes: [[0; 2]; N],
         }
     }
