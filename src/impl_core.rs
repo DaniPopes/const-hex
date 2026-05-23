@@ -4,12 +4,15 @@
 
 use core::mem::{self, MaybeUninit};
 
-/// `MaybeUninit::slice_assume_init_mut`
+/// Reinterprets `&mut [T]` as `&mut [MaybeUninit<T>]`.
+///
+/// This is safe because `MaybeUninit<T>` is guaranteed to have the same layout as `T`,
+/// and an initialized `T` is always a valid `MaybeUninit<T>`.
 #[inline(always)]
-pub(crate) unsafe fn slice_assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
-    // SAFETY: similar to safety notes for `slice_get_ref`, but we have a
-    // mutable reference which is also guaranteed to be valid for writes.
-    unsafe { &mut *(slice as *mut [MaybeUninit<T>] as *mut [T]) }
+pub(crate) fn slice_as_uninit_mut<T>(slice: &mut [T]) -> &mut [MaybeUninit<T>] {
+    // SAFETY: `MaybeUninit<T>` has the same layout as `T`, and initialized
+    // memory is valid `MaybeUninit`.
+    unsafe { &mut *(slice as *mut [T] as *mut [MaybeUninit<T>]) }
 }
 
 /// `MaybeUninit::uninit_array`

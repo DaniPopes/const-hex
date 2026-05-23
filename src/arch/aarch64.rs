@@ -3,6 +3,7 @@
 use super::generic;
 use crate::{get_chars_table, Output};
 use core::arch::aarch64::*;
+use core::mem::MaybeUninit;
 
 pub(crate) const USE_CHECK_FN: bool = false;
 
@@ -85,7 +86,7 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline]
-pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
+pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     if cfg!(miri) || !has_neon() {
         return generic::decode_checked(input, output);
     }
@@ -93,7 +94,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [u8]) -> bool {
 }
 
 #[target_feature(enable = "neon")]
-unsafe fn decode_checked_neon(input: &[u8], output: &mut [u8]) -> bool {
+unsafe fn decode_checked_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     debug_assert_eq!(output.len(), input.len() / 2);
 
     let add_c6 = vdupq_n_u8(0xC6); // 0xFF - b'9'
@@ -130,7 +131,7 @@ unsafe fn decode_checked_neon(input: &[u8], output: &mut [u8]) -> bool {
 }
 
 #[inline]
-pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
+pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [MaybeUninit<u8>]) {
     if cfg!(miri) || !has_neon() {
         return generic::decode_unchecked(input, output);
     }
@@ -138,7 +139,7 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [u8]) {
 }
 
 #[target_feature(enable = "neon")]
-unsafe fn decode_unchecked_neon(input: &[u8], output: &mut [u8]) {
+unsafe fn decode_unchecked_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
     generic::decode_unchecked_unaligned_chunks(input, output, |[v0, v1]: [uint8x16_t; 2]| {
         let n0 = unhex_neon(v0);
         let n1 = unhex_neon(v1);
