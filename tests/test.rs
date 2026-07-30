@@ -382,6 +382,65 @@ fn encode_all_byte_values() {
     }
 }
 
+#[test]
+fn display_propagates_write_errors() {
+    use core::fmt::{self, Write};
+
+    /// A sink that fails once `budget` bytes have been written.
+    struct Failing {
+        budget: usize,
+        written: usize,
+    }
+
+    impl fmt::Write for Failing {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            if s.len() > self.budget {
+                return Err(fmt::Error);
+            }
+            self.budget -= s.len();
+            self.written += s.len();
+            Ok(())
+        }
+    }
+
+    // Sizes below, at, and above the SIMD chunk sizes, so every encode path is
+    // covered.
+    let all = [0xde_u8; 129];
+    for len in [1, 8, 16, 31, 32, 64, 129] {
+        let bytes = &all[..len];
+
+        // Fails on the first write.
+        let mut sink = Failing {
+            budget: 0,
+            written: 0,
+        };
+        assert_eq!(
+            write!(sink, "{}", const_hex::display(&bytes)),
+            Err(fmt::Error),
+            "len {len}: error not propagated"
+        );
+
+        // Fails partway through, after the `0x` prefix has been written.
+        let mut sink = Failing {
+            budget: 2,
+            written: 0,
+        };
+        assert_eq!(
+            write!(sink, "{:#x}", const_hex::display(&bytes)),
+            Err(fmt::Error),
+            "len {len}: error not propagated after prefix"
+        );
+
+        // A sink with enough room still succeeds.
+        let mut sink = Failing {
+            budget: len * 2 + 2,
+            written: 0,
+        };
+        assert_eq!(write!(sink, "{:#X}", const_hex::display(&bytes)), Ok(()));
+        assert_eq!(sink.written, len * 2 + 2, "len {len}: short write");
+    }
+}
+
 #[track_caller]
 fn assert_lower(s: &str) {
     let expected = (0..=u8::MAX)

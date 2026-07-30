@@ -47,18 +47,49 @@ impl Output for &mut [MaybeUninit<u8>] {
     }
 }
 
-impl Output for &mut fmt::Formatter<'_> {
+/// Wraps a [`fmt::Formatter`] to capture the first write error.
+///
+/// [`Output::write`] is infallible because the buffer outputs cannot fail, so
+/// errors from the formatter are recorded here and surfaced by [`Self::finish`]
+/// once encoding is done. Writes after the first error are skipped.
+pub(crate) struct FormatterOutput<'a, 'b> {
+    f: &'a mut fmt::Formatter<'b>,
+    result: fmt::Result,
+}
+
+impl<'a, 'b> FormatterOutput<'a, 'b> {
+    #[inline]
+    pub(crate) fn new(f: &'a mut fmt::Formatter<'b>) -> Self {
+        Self { f, result: Ok(()) }
+    }
+
+    /// Returns the first error encountered while writing, if any.
+    #[inline]
+    pub(crate) const fn finish(&self) -> fmt::Result {
+        self.result
+    }
+}
+
+impl Output for &mut FormatterOutput<'_, '_> {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
+        if self.result.is_err() {
+            return;
+        }
         if cfg!(debug_assertions) {
             core::str::from_utf8(bytes).unwrap();
         }
-        let _ = self.write_str(unsafe { core::str::from_utf8_unchecked(bytes) });
+        self.result = self
+            .f
+            .write_str(unsafe { core::str::from_utf8_unchecked(bytes) });
     }
 
     #[inline]
     fn write_byte(&mut self, byte: u8) {
-        let _ = self.write_char(byte as char);
+        if self.result.is_err() {
+            return;
+        }
+        self.result = self.f.write_char(byte as char);
     }
 }
 
