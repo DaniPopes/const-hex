@@ -44,7 +44,8 @@ impl<T: AsRef<[u8]>> Display<T> {
         if f.alternate() {
             f.write_str("0x")?;
         }
-        unsafe { crate::imp::encode::<UPPER>(self.0.as_ref(), f) };
-        Ok(())
+        let mut output = crate::output::FormatterOutput::new(f);
+        unsafe { crate::imp::encode::<UPPER>(self.0.as_ref(), &mut output) };
+        output.finish()
     }
 }
