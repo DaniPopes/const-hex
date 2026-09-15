@@ -32,7 +32,7 @@ where
     S: serde_core::Serializer,
     T: AsRef<[u8]>,
 {
-    serializer.collect_str(&format_args!("{:#}", crate::display(data)))
+    serialize_inner::<S, false, true>(data.as_ref(), serializer)
 }
 
 /// Serializes `data` as hex string using uppercase characters.
@@ -44,7 +44,56 @@ where
     S: serde_core::Serializer,
     T: AsRef<[u8]>,
 {
-    serializer.collect_str(&format_args!("{:#X}", crate::display(data)))
+    serialize_inner::<S, true, true>(data.as_ref(), serializer)
+}
+
+/// Inputs up to this many bytes are encoded into a stack buffer.
+const STACK_LEN: usize = 128;
+
+/// Encodes into a single buffer and emits it with one `serialize_str` call.
+///
+/// `collect_str` would instead run the `Display` impl against the serializer's `fmt::Write`
+/// shim, which for `serde_json` means one string-escape scan and one `write_all` per SIMD
+/// chunk (and one per nibble for the scalar tail), i.e. tens of calls per value.
+fn serialize_inner<S, const UPPER: bool, const PREFIX: bool>(
+    data: &[u8],
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde_core::Serializer,
+{
+    if data.len() <= STACK_LEN {
+        let mut buf = crate::impl_core::uninit_array::<u8, { STACK_LEN * 2 + 2 }>();
+        let prefix_len = PREFIX as usize * 2;
+        let len = prefix_len + data.len() * 2;
+        if PREFIX {
+            buf[0].write(b'0');
+            buf[1].write(b'x');
+        }
+        // SAFETY: `buf[prefix_len..len]` is exactly `data.len() * 2` bytes long.
+        unsafe { crate::imp::encode::<UPPER>(data, &mut buf[prefix_len..len]) };
+        // SAFETY: `buf[..len]` has been fully initialized above, and only ASCII
+        // characters, which are valid UTF-8, have been written.
+        let s = unsafe {
+            core::str::from_utf8_unchecked(crate::impl_core::slice_assume_init(&buf[..len]))
+        };
+        serializer.serialize_str(s)
+    } else {
+        #[cfg(feature = "alloc")]
+        {
+            serializer.serialize_str(&crate::encode_inner::<UPPER, PREFIX>(data))
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            let display = crate::display(data);
+            match (UPPER, PREFIX) {
+                (false, false) => serializer.collect_str(&format_args!("{display:x}")),
+                (false, true) => serializer.collect_str(&format_args!("{display:#x}")),
+                (true, false) => serializer.collect_str(&format_args!("{display:X}")),
+                (true, true) => serializer.collect_str(&format_args!("{display:#X}")),
+            }
+        }
+    }
 }
 
 /// Deserializes a hex string into raw bytes.
@@ -111,7 +160,7 @@ pub mod no_prefix {
         S: serde_core::Serializer,
         T: AsRef<[u8]>,
     {
-        serializer.collect_str(&crate::display(data))
+        super::serialize_inner::<S, false, false>(data.as_ref(), serializer)
     }
 
     /// Serializes `data` as hex string using uppercase characters.
@@ -123,7 +172,7 @@ pub mod no_prefix {
         S: serde_core::Serializer,
         T: AsRef<[u8]>,
     {
-        serializer.collect_str(&format_args!("{:X}", crate::display(data)))
+        super::serialize_inner::<S, true, false>(data.as_ref(), serializer)
     }
 
     pub use super::deserialize;

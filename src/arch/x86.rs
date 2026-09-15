@@ -27,12 +27,18 @@ cfg_if::cfg_if! {
             std::arch::is_x86_feature_detected!("avx2")
         }
     } else {
-        cpufeatures::new!(cpuid_sse2, "sse2");
-        use cpuid_sse2::get as has_sse2;
-        cpufeatures::new!(cpuid_ssse3, "ssse3");
-        use cpuid_ssse3::get as has_ssse3;
-        cpufeatures::new!(cpuid_avx2, "avx2");
-        use cpuid_avx2::get as has_avx2;
+        // `cpufeatures` 0.2 expands to `u8::max_value()`, which recent toolchains
+        // deprecate; 0.3 needs a newer MSRV than this crate supports.
+        #[allow(deprecated)]
+        mod cpuid {
+            cpufeatures::new!(cpuid_sse2, "sse2");
+            pub(super) use cpuid_sse2::get as has_sse2;
+            cpufeatures::new!(cpuid_ssse3, "ssse3");
+            pub(super) use cpuid_ssse3::get as has_ssse3;
+            cpufeatures::new!(cpuid_avx2, "avx2");
+            pub(super) use cpuid_avx2::get as has_avx2;
+        }
+        use cpuid::{has_avx2, has_sse2, has_ssse3};
     }
 }
 

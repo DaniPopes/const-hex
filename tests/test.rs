@@ -194,6 +194,49 @@ fn serde() {
     );
 }
 
+#[test]
+#[cfg(all(feature = "serde", feature = "alloc"))]
+fn serde_lengths() {
+    #[derive(serde::Serialize)]
+    struct Lower<'a>(#[serde(serialize_with = "const_hex::serialize")] &'a [u8]);
+    #[derive(serde::Serialize)]
+    struct Upper<'a>(#[serde(serialize_with = "const_hex::serialize_upper")] &'a [u8]);
+    #[derive(serde::Serialize)]
+    struct LowerNoPrefix<'a>(
+        #[serde(serialize_with = "const_hex::serde::no_prefix::serialize")] &'a [u8],
+    );
+    #[derive(serde::Serialize)]
+    struct UpperNoPrefix<'a>(
+        #[serde(serialize_with = "const_hex::serde::no_prefix::serialize_upper")] &'a [u8],
+    );
+
+    // Lengths around the stack buffer limit, which is 128 bytes.
+    for len in [0, 1, 127, 128, 129, 4096] {
+        let data = (0..len).map(|i| i as u8).collect::<Vec<u8>>();
+        let quoted = |s: String| format!("\"{s}\"");
+        assert_eq!(
+            serde_json::to_string(&Lower(&data)).unwrap(),
+            quoted(const_hex::encode_prefixed(&data)),
+            "len={len}"
+        );
+        assert_eq!(
+            serde_json::to_string(&Upper(&data)).unwrap(),
+            quoted(const_hex::encode_upper_prefixed(&data)),
+            "len={len}"
+        );
+        assert_eq!(
+            serde_json::to_string(&LowerNoPrefix(&data)).unwrap(),
+            quoted(const_hex::encode(&data)),
+            "len={len}"
+        );
+        assert_eq!(
+            serde_json::to_string(&UpperNoPrefix(&data)).unwrap(),
+            quoted(const_hex::encode_upper(&data)),
+            "len={len}"
+        );
+    }
+}
+
 const ALL: [u8; 256] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,

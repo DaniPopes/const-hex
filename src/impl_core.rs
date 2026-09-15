@@ -22,6 +22,14 @@ pub(crate) const fn uninit_array<T, const N: usize>() -> [MaybeUninit<T>; N] {
     unsafe { MaybeUninit::<[MaybeUninit<T>; N]>::uninit().assume_init() }
 }
 
+/// `MaybeUninit::slice_assume_init_ref`
+#[inline(always)]
+pub(crate) const unsafe fn slice_assume_init<T>(slice: &[MaybeUninit<T>]) -> &[T] {
+    // SAFETY: The caller guarantees that all elements are initialized, and
+    // `MaybeUninit<T>` is guaranteed to have the same layout as `T`.
+    unsafe { &*(slice as *const [MaybeUninit<T>] as *const [T]) }
+}
+
 /// `MaybeUninit::array_assume_init`
 #[inline]
 pub(crate) unsafe fn array_assume_init<T, const N: usize>(array: [MaybeUninit<T>; N]) -> [T; N] {
