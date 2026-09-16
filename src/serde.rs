@@ -50,11 +50,12 @@ where
 /// Inputs up to this many bytes are encoded into a stack buffer.
 const STACK_LEN: usize = 128;
 
-/// Encodes into a single buffer and emits it with one `serialize_str` call.
-///
-/// `collect_str` would instead run the `Display` impl against the serializer's `fmt::Write`
-/// shim, which for `serde_json` means one string-escape scan and one `write_all` per SIMD
-/// chunk (and one per nibble for the scalar tail), i.e. tens of calls per value.
+/// Encoded bytes buffered per formatter write for larger inputs.
+const STREAM_LEN: usize = 4096;
+
+/// Uses one `serialize_str` for small values and buffered `collect_str` for large ones.
+/// Serializers such as `serde_json` can stream without a full temporary string;
+/// serializers using Serde's default `collect_str` may still allocate one.
 fn serialize_inner<S, const UPPER: bool, const PREFIX: bool>(
     data: &[u8],
     serializer: S,
@@ -79,19 +80,75 @@ where
         };
         serializer.serialize_str(s)
     } else {
-        #[cfg(feature = "alloc")]
-        {
-            serializer.serialize_str(&crate::encode_inner::<UPPER, PREFIX>(data))
+        serializer.collect_str(&BufferedHex::<UPPER, PREFIX>(data))
+    }
+}
+
+struct BufferedHex<'a, const UPPER: bool, const PREFIX: bool>(&'a [u8]);
+
+impl<const UPPER: bool, const PREFIX: bool> fmt::Display for BufferedHex<'_, UPPER, PREFIX> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::output::{BufferedOutput, FormatterOutput, Output};
+
+        let mut formatter = FormatterOutput::new(f);
+        let mut output = BufferedOutput::<_, STREAM_LEN>::new(&mut formatter);
+        if PREFIX {
+            output.write(b"0x");
         }
-        #[cfg(not(feature = "alloc"))]
-        {
-            let display = crate::display(data);
-            match (UPPER, PREFIX) {
-                (false, false) => serializer.collect_str(&format_args!("{display:x}")),
-                (false, true) => serializer.collect_str(&format_args!("{display:#x}")),
-                (true, false) => serializer.collect_str(&format_args!("{display:X}")),
-                (true, true) => serializer.collect_str(&format_args!("{display:#X}")),
+        // SAFETY: BufferedOutput accepts any number of encoded bytes.
+        unsafe { crate::imp::encode::<UPPER>(self.0, &mut output) };
+        output.finish();
+        formatter.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::fmt::Write;
+
+    struct Sink {
+        writes: usize,
+        bytes: usize,
+        fail_at: usize,
+    }
+
+    impl fmt::Write for Sink {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            self.writes += 1;
+            if self.writes >= self.fail_at {
+                return Err(fmt::Error);
             }
+            self.bytes += s.len();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn buffered_hex_batches_writes() {
+        let mut sink = Sink {
+            writes: 0,
+            bytes: 0,
+            fail_at: usize::MAX,
+        };
+        write!(sink, "{}", BufferedHex::<false, true>(&[0xab; 4097])).unwrap();
+        assert_eq!(sink.bytes, 8196);
+        // A prefix can leave a partial SIMD chunk at the first boundary.
+        assert_eq!(sink.writes, 3);
+    }
+
+    #[test]
+    fn buffered_hex_propagates_flush_errors() {
+        // Exercise errors during an intermediate flush and the final flush.
+        for fail_at in 1..=3 {
+            let mut sink = Sink {
+                writes: 0,
+                bytes: 0,
+                fail_at,
+            };
+            assert!(write!(sink, "{}", BufferedHex::<false, true>(&[0xab; 4097])).is_err());
+            // FormatterOutput must not call the underlying writer again after failure.
+            assert_eq!(sink.writes, fail_at);
         }
     }
 }
