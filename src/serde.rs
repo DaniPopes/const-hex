@@ -93,7 +93,7 @@ impl<const UPPER: bool, const PREFIX: bool> fmt::Display for BufferedHex<'_, UPP
         let mut formatter = FormatterOutput::new(f);
         let mut output = BufferedOutput::<_, STREAM_LEN>::new(&mut formatter);
         if PREFIX {
-            (&mut output).write(b"0x");
+            output.write(b"0x");
         }
         // SAFETY: BufferedOutput accepts any number of encoded bytes.
         unsafe { crate::imp::encode::<UPPER>(self.0, &mut output) };

@@ -16,6 +16,23 @@ pub(crate) trait Output {
     }
 }
 
+impl<O: Output + ?Sized> Output for &mut O {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        (**self).write(bytes);
+    }
+
+    #[inline]
+    fn write_byte(&mut self, byte: u8) {
+        (**self).write_byte(byte);
+    }
+
+    #[inline]
+    fn remaining(&self) -> Option<usize> {
+        (**self).remaining()
+    }
+}
+
 impl Output for &mut [u8] {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
@@ -90,7 +107,7 @@ impl<O: Output, const N: usize> BufferedOutput<O, N> {
 }
 
 #[cfg(feature = "serde")]
-impl<O: Output, const N: usize> Output for &mut BufferedOutput<O, N> {
+impl<O: Output, const N: usize> Output for BufferedOutput<O, N> {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
         if bytes.len() > N - self.len {
@@ -139,7 +156,7 @@ impl<'a, 'b> FormatterOutput<'a, 'b> {
     }
 }
 
-impl Output for &mut FormatterOutput<'_, '_> {
+impl Output for FormatterOutput<'_, '_> {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
         if self.result.is_err() {
@@ -196,11 +213,11 @@ mod tests {
         fn check<const N: usize>() {
             let mut bytes = [0; 12];
             let mut output = BufferedOutput::<_, N>::new(bytes.as_mut_slice());
-            (&mut output).write_byte(b'a');
-            (&mut output).write(b"bc");
-            (&mut output).write(b"defghijk");
-            (&mut output).write_byte(b'l');
-            (&mut output).write(b"");
+            output.write_byte(b'a');
+            output.write(b"bc");
+            output.write(b"defghijk");
+            output.write_byte(b'l');
+            output.write(b"");
             output.finish();
             assert_eq!(&bytes, b"abcdefghijkl");
         }
@@ -217,10 +234,10 @@ mod tests {
                 for second in 0..=16 {
                     let mut bytes = [0; 33];
                     let mut output = BufferedOutput::<_, N>::new(bytes.as_mut_slice());
-                    (&mut output).write(&[b'a'; 16][..first]);
-                    (&mut output).write(b"");
-                    (&mut output).write(&[b'b'; 16][..second]);
-                    (&mut output).write_byte(b'c');
+                    output.write(&[b'a'; 16][..first]);
+                    output.write(b"");
+                    output.write(&[b'b'; 16][..second]);
+                    output.write_byte(b'c');
                     output.finish();
                     assert_eq!(&bytes[..first], &[b'a'; 16][..first]);
                     assert_eq!(&bytes[first..first + second], &[b'b'; 16][..second]);
