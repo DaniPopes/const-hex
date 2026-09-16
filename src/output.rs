@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, panic = "unwind"))]
     #[should_panic(expected = "BufferedOutput dropped without finish()")]
     fn buffered_output_requires_finish_with_pending_bytes() {
         let mut bytes = [0; 4];
@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "std")]
+    #[cfg(all(feature = "std", panic = "unwind"))]
     fn buffered_output_does_not_double_panic() {
         assert!(std::panic::catch_unwind(|| {
             let mut bytes = [0; 4];
