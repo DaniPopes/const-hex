@@ -8,9 +8,6 @@ use std::io::Write;
 
 mod data;
 
-#[cfg(all(feature = "serde", feature = "alloc"))]
-mod serde_encoding;
-
 struct HexBufferFormat<const N: usize>(&'static [u8; N]);
 impl<const N: usize> fmt::Display for HexBufferFormat<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

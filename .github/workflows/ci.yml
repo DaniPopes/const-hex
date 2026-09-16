@@ -71,7 +71,7 @@ jobs:
         if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features serde,nightly,portable-simd
         if: matrix.rust == 'nightly'
-      - run: cargo bench --features serde --no-run
+      - run: cargo bench --no-run
         if: matrix.rust != '1.64'
 
       - name: Disable target feature
@@ -87,7 +87,7 @@ jobs:
         if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features serde,nightly,portable-simd
         if: matrix.rust == 'nightly'
-      - run: cargo bench --features serde --no-run
+      - run: cargo bench --no-run
         if: matrix.rust != '1.64'
 
   miri:
