@@ -47,6 +47,71 @@ impl Output for &mut [MaybeUninit<u8>] {
     }
 }
 
+/// Batches encoder writes into a fixed-size stack buffer.
+///
+/// Like `BufWriter`, writes at least as large as the buffer bypass it after
+/// flushing pending bytes. Call `finish` explicitly; dropping does not flush.
+#[cfg(feature = "serde")]
+pub(crate) struct BufferedOutput<O, const N: usize> {
+    output: O,
+    buffer: [MaybeUninit<u8>; N],
+    len: usize,
+}
+
+#[cfg(feature = "serde")]
+impl<O: Output, const N: usize> BufferedOutput<O, N> {
+    #[inline]
+    pub(crate) fn new(output: O) -> Self {
+        assert!(N > 0, "output buffer must not be empty");
+        Self {
+            output,
+            buffer: crate::impl_core::uninit_array(),
+            len: 0,
+        }
+    }
+
+    #[inline]
+    fn flush(&mut self) {
+        if self.len != 0 {
+            // SAFETY: writes initialize every byte in `buffer[..len]`.
+            let bytes = unsafe { crate::impl_core::slice_assume_init(&self.buffer[..self.len]) };
+            self.output.write(bytes);
+            self.len = 0;
+        }
+    }
+
+    #[inline]
+    pub(crate) fn finish(mut self) {
+        self.flush();
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<O: Output, const N: usize> Output for &mut BufferedOutput<O, N> {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        if bytes.len() > N - self.len {
+            self.flush();
+        }
+        if bytes.len() >= N {
+            self.output.write(bytes);
+        } else {
+            // SAFETY: the flush above ensures there is room for this write.
+            unsafe { write_bytes_output_slice(&mut self.buffer[self.len..], bytes) };
+            self.len += bytes.len();
+        }
+    }
+
+    #[inline]
+    fn write_byte(&mut self, byte: u8) {
+        if self.len == N {
+            self.flush();
+        }
+        self.buffer[self.len].write(byte);
+        self.len += 1;
+    }
+}
+
 /// Wraps a [`fmt::Formatter`] to capture the first write error.
 ///
 /// [`Output::write`] is infallible because the buffer outputs cannot fail, so
@@ -115,4 +180,29 @@ unsafe fn advance_slice<T>(slice: &mut &mut [T], count: usize) {
     let ptr = slice.as_mut_ptr();
     // SAFETY: Caller must guarantee `slice` is long enough, and that `slice` is not concurrently accessed.
     *slice = core::slice::from_raw_parts_mut(ptr.add(count), len - count);
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buffered_output_preserves_order() {
+        // Include a capacity smaller than a SIMD fragment and a one-byte buffer.
+        fn check<const N: usize>() {
+            let mut bytes = [0; 12];
+            let mut output = BufferedOutput::<_, N>::new(bytes.as_mut_slice());
+            (&mut output).write_byte(b'a');
+            (&mut output).write(b"bc");
+            (&mut output).write(b"defghijk");
+            (&mut output).write_byte(b'l');
+            (&mut output).write(b"");
+            output.finish();
+            assert_eq!(&bytes, b"abcdefghijkl");
+        }
+        check::<1>();
+        check::<4>();
+        check::<8>();
+        check::<64>();
+    }
 }

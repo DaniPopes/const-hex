@@ -195,7 +195,7 @@ fn serde() {
 }
 
 #[test]
-#[cfg(all(feature = "serde", feature = "alloc"))]
+#[cfg(feature = "serde")]
 fn serde_lengths() {
     #[derive(serde::Serialize)]
     struct Lower<'a>(#[serde(serialize_with = "const_hex::serialize")] &'a [u8]);
@@ -210,28 +210,33 @@ fn serde_lengths() {
         #[serde(serialize_with = "const_hex::serde::no_prefix::serialize_upper")] &'a [u8],
     );
 
-    // Lengths around the stack buffer limit, which is 128 bytes.
-    for len in [0, 1, 127, 128, 129, 4096] {
+    // Small-value threshold, SIMD tails, and 4 KiB output buffer boundaries,
+    // both with and without the two-byte prefix.
+    for len in [
+        0, 1, 127, 128, 129, 159, 2047, 2048, 2049, 4095, 4096, 4097, 65537,
+    ] {
         let data = (0..len).map(|i| i as u8).collect::<Vec<u8>>();
         let quoted = |s: String| format!("\"{s}\"");
+        let lower = hex::encode(&data);
+        let upper = lower.to_uppercase();
         assert_eq!(
             serde_json::to_string(&Lower(&data)).unwrap(),
-            quoted(const_hex::encode_prefixed(&data)),
+            quoted(format!("0x{lower}")),
             "len={len}"
         );
         assert_eq!(
             serde_json::to_string(&Upper(&data)).unwrap(),
-            quoted(const_hex::encode_upper_prefixed(&data)),
+            quoted(format!("0x{upper}")),
             "len={len}"
         );
         assert_eq!(
             serde_json::to_string(&LowerNoPrefix(&data)).unwrap(),
-            quoted(const_hex::encode(&data)),
+            quoted(lower),
             "len={len}"
         );
         assert_eq!(
             serde_json::to_string(&UpperNoPrefix(&data)).unwrap(),
-            quoted(const_hex::encode_upper(&data)),
+            quoted(upper),
             "len={len}"
         );
     }

@@ -61,33 +61,33 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo build
-      - run: cargo build --no-default-features
-      - run: cargo test
+      - run: cargo build --features serde
+      - run: cargo build --no-default-features --features serde
+      - run: cargo test --features serde
         if: matrix.rust != '1.64'
-      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --features serde
         if: matrix.rust != '1.64'
-      - run: cargo test --no-default-features --features force-generic
+      - run: cargo test --no-default-features --features serde,force-generic
         if: matrix.rust != '1.64'
-      - run: cargo test --no-default-features --features nightly,portable-simd
+      - run: cargo test --no-default-features --features serde,nightly,portable-simd
         if: matrix.rust == 'nightly'
-      - run: cargo bench --no-run
+      - run: cargo bench --features serde --no-run
         if: matrix.rust != '1.64'
 
       - name: Disable target feature
         run: echo RUSTFLAGS=${RUSTFLAGS_BAK}\ -Ctarget-feature=-${{ matrix.target.feature }} >> $GITHUB_ENV
 
-      - run: cargo build
-      - run: cargo build --no-default-features
-      - run: cargo test
+      - run: cargo build --features serde
+      - run: cargo build --no-default-features --features serde
+      - run: cargo test --features serde
         if: matrix.rust != '1.64'
-      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --features serde
         if: matrix.rust != '1.64'
-      - run: cargo test --no-default-features --features force-generic
+      - run: cargo test --no-default-features --features serde,force-generic
         if: matrix.rust != '1.64'
-      - run: cargo test --no-default-features --features nightly,portable-simd
+      - run: cargo test --no-default-features --features serde,nightly,portable-simd
         if: matrix.rust == 'nightly'
-      - run: cargo bench --no-run
+      - run: cargo bench --features serde --no-run
         if: matrix.rust != '1.64'
 
   miri:
@@ -106,7 +106,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@miri
         with:
           target: ${{ matrix.target }}
-      - run: cargo miri test --target ${{ matrix.target }} ${{ matrix.flags }}
+      - run: cargo miri test --features serde --target ${{ matrix.target }} ${{ matrix.flags }}
 
   fuzz:
     name: Fuzz
@@ -139,7 +139,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets
+      - run: cargo clippy --all-targets --features serde
 
   docs:
     name: docs
