@@ -55,6 +55,7 @@ impl Output for &mut [MaybeUninit<u8>] {
 pub(crate) struct BufferedOutput<O, const N: usize> {
     output: O,
     buffer: [MaybeUninit<u8>; N],
+    // Always <= N; buffer[..len] is initialized.
     len: usize,
 }
 
@@ -73,8 +74,10 @@ impl<O: Output, const N: usize> BufferedOutput<O, N> {
     #[inline]
     fn flush(&mut self) {
         if self.len != 0 {
-            // SAFETY: writes initialize every byte in `buffer[..len]`.
-            let bytes = unsafe { crate::impl_core::slice_assume_init(&self.buffer[..self.len]) };
+            // SAFETY: len <= N, and writes initialize every byte in buffer[..len].
+            let bytes = unsafe {
+                crate::impl_core::slice_assume_init(self.buffer.get_unchecked(..self.len))
+            };
             self.output.write(bytes);
             self.len = 0;
         }
@@ -96,8 +99,8 @@ impl<O: Output, const N: usize> Output for &mut BufferedOutput<O, N> {
         if bytes.len() >= N {
             self.output.write(bytes);
         } else {
-            // SAFETY: the flush above ensures there is room for this write.
-            unsafe { write_bytes_output_slice(&mut self.buffer[self.len..], bytes) };
+            // SAFETY: len <= N, and the flush above ensures there is room for this write.
+            unsafe { write_bytes_output_slice(self.buffer.get_unchecked_mut(self.len..), bytes) };
             self.len += bytes.len();
         }
     }
@@ -107,7 +110,8 @@ impl<O: Output, const N: usize> Output for &mut BufferedOutput<O, N> {
         if self.len == N {
             self.flush();
         }
-        self.buffer[self.len].write(byte);
+        // SAFETY: N > 0 and len <= N; flushing a full buffer resets len to zero.
+        unsafe { self.buffer.get_unchecked_mut(self.len).write(byte) };
         self.len += 1;
     }
 }
@@ -203,6 +207,34 @@ mod tests {
         check::<1>();
         check::<4>();
         check::<8>();
+        check::<64>();
+    }
+
+    #[test]
+    fn buffered_output_write_boundaries() {
+        fn check<const N: usize>() {
+            for first in 0..=16 {
+                for second in 0..=16 {
+                    let mut bytes = [0; 33];
+                    let mut output = BufferedOutput::<_, N>::new(bytes.as_mut_slice());
+                    (&mut output).write(&[b'a'; 16][..first]);
+                    (&mut output).write(b"");
+                    (&mut output).write(&[b'b'; 16][..second]);
+                    (&mut output).write_byte(b'c');
+                    output.finish();
+                    assert_eq!(&bytes[..first], &[b'a'; 16][..first]);
+                    assert_eq!(&bytes[first..first + second], &[b'b'; 16][..second]);
+                    assert_eq!(bytes[first + second], b'c');
+                    assert!(bytes[first + second + 1..].iter().all(|&b| b == 0));
+                }
+            }
+        }
+        check::<1>();
+        check::<2>();
+        check::<3>();
+        check::<4>();
+        check::<8>();
+        check::<16>();
         check::<64>();
     }
 }
