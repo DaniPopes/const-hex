@@ -68,6 +68,8 @@ impl Output for &mut [MaybeUninit<u8>] {
 ///
 /// Like `BufWriter`, writes at least as large as the buffer bypass it after
 /// flushing pending bytes. Call `finish` explicitly; dropping does not flush.
+/// In debug builds, dropping with pending bytes panics. With `std`, this check
+/// is skipped during unwinding to avoid a double panic.
 #[cfg(feature = "serde")]
 pub(crate) struct BufferedOutput<O, const N: usize> {
     output: O,
@@ -95,6 +97,11 @@ impl<O: Output, const N: usize> BufferedOutput<O, N> {
             let bytes = unsafe {
                 crate::impl_core::slice_assume_init(self.buffer.get_unchecked(..self.len))
             };
+            // Disarm the debug drop check if the output panics, including without std.
+            #[cfg(debug_assertions)]
+            {
+                self.len = 0;
+            }
             self.output.write(bytes);
             self.len = 0;
         }
@@ -103,6 +110,18 @@ impl<O: Output, const N: usize> BufferedOutput<O, N> {
     #[inline]
     pub(crate) fn finish(mut self) {
         self.flush();
+    }
+}
+
+#[cfg(all(feature = "serde", debug_assertions))]
+impl<O, const N: usize> Drop for BufferedOutput<O, N> {
+    #[inline]
+    fn drop(&mut self) {
+        #[cfg(feature = "std")]
+        if std::thread::panicking() {
+            return;
+        }
+        debug_assert_eq!(self.len, 0, "BufferedOutput dropped without finish()");
     }
 }
 
@@ -206,6 +225,33 @@ unsafe fn advance_slice<T>(slice: &mut &mut [T], count: usize) {
 #[cfg(all(test, feature = "serde"))]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn buffered_output_has_no_release_drop_glue() {
+        assert!(!core::mem::needs_drop::<BufferedOutput<&mut [u8], 4>>());
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "BufferedOutput dropped without finish()")]
+    fn buffered_output_requires_finish_with_pending_bytes() {
+        let mut bytes = [0; 4];
+        let mut output = BufferedOutput::<_, 4>::new(bytes.as_mut_slice());
+        output.write_byte(b'a');
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn buffered_output_does_not_double_panic() {
+        assert!(std::panic::catch_unwind(|| {
+            let mut bytes = [0; 4];
+            let mut output = BufferedOutput::<_, 4>::new(bytes.as_mut_slice());
+            output.write_byte(b'a');
+            panic!("original panic");
+        })
+        .is_err());
+    }
 
     #[test]
     fn buffered_output_preserves_order() {
