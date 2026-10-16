@@ -177,7 +177,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// Returns a mutable reference to the underlying bytes casted to a string
     /// slice.
     #[inline]
-    pub fn as_mut_str(&mut self) -> &mut str {
+    pub const fn as_mut_str(&mut self) -> &mut str {
         // SAFETY: The buffer always contains valid UTF-8.
         unsafe { str::from_utf8_unchecked_mut(self.as_mut_bytes()) }
     }
@@ -236,7 +236,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     ///
     /// Use of a `str` whose contents are not valid UTF-8 is undefined behavior.
     #[inline]
-    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8] {
+    pub const unsafe fn as_mut_bytes(&mut self) -> &mut [u8] {
         // SAFETY: [u16; N] is layout-compatible with [u8; N * 2].
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), Self::LEN) }
     }
@@ -247,7 +247,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     ///
     /// See [`as_mut_bytes`](Buffer::as_mut_bytes).
     #[inline]
-    pub unsafe fn buffer(&mut self) -> &mut [u8] {
+    pub const unsafe fn buffer(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self.bytes.as_mut_ptr().cast(), N * 2) }
     }
 
@@ -265,7 +265,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
     /// The caller must ensure that the slice outlives the pointer this
     /// function returns, or else it will end up pointing to garbage.
     #[inline]
-    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+    pub const fn as_mut_ptr(&mut self) -> *mut u8 {
         unsafe { (self as *mut Self).cast::<u8>().add(!PREFIX as usize * 2) }
     }
 }

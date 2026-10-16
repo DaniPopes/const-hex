@@ -11,7 +11,7 @@
 //! extending the API with [const-eval](const_encode), a
 //! [const-generics formatting buffer](Buffer), similar to [`itoa`]'s, and more.
 //!
-//! _Version requirement: rustc 1.64+_
+//! _Version requirement: rustc 1.89+_
 //!
 //! [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
 //! [`hex`]: https://docs.rs/hex
@@ -63,9 +63,9 @@ use core::mem::MaybeUninit;
 #[allow(unused_imports)]
 use alloc::{string::String, vec::Vec};
 
-// `cpufeatures` may be unused when `force-generic` is enabled.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use cpufeatures as _;
+// `commonware-simd` is unused when another implementation is selected.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use commonware_simd as _;
 
 mod arch;
 use arch::{generic, imp};
@@ -331,7 +331,7 @@ pub fn encode_upper_prefixed<T: AsRef<[u8]>>(data: T) -> String {
 /// ```
 #[inline]
 pub const fn const_check(input: &[u8]) -> Result<(), FromHexError> {
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         return Err(FromHexError::OddLength);
     }
     let input = strip_prefix(input);
@@ -384,7 +384,7 @@ pub const fn const_check_raw(input: &[u8]) -> bool {
 pub fn check<T: AsRef<[u8]>>(input: T) -> Result<(), FromHexError> {
     #[allow(clippy::missing_const_for_fn)]
     fn check_inner(input: &[u8]) -> Result<(), FromHexError> {
-        if input.len() % 2 != 0 {
+        if !input.len().is_multiple_of(2) {
             return Err(FromHexError::OddLength);
         }
         let stripped = strip_prefix(input);
@@ -455,7 +455,7 @@ pub fn check_raw<T: AsRef<[u8]>>(input: T) -> bool {
 /// ```
 #[inline]
 pub const fn const_decode_to_array<const N: usize>(input: &[u8]) -> Result<[u8; N], FromHexError> {
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         return Err(FromHexError::OddLength);
     }
     let input = strip_prefix(input);
@@ -522,7 +522,7 @@ const fn const_decode_to_array_impl<const N: usize>(input: &[u8]) -> Option<[u8;
 #[inline]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, FromHexError> {
     fn decode_inner(input: &[u8]) -> Result<Vec<u8>, FromHexError> {
-        if unlikely(input.len() % 2 != 0) {
+        if unlikely(!input.len().is_multiple_of(2)) {
             return Err(FromHexError::OddLength);
         }
         let input = strip_prefix(input);
@@ -656,7 +656,7 @@ fn encode_to_str_inner<'o, const UPPER: bool>(
 }
 
 fn decode_to_slice_inner(input: &[u8], output: &mut [MaybeUninit<u8>]) -> Result<(), FromHexError> {
-    if unlikely(input.len() % 2 != 0) {
+    if unlikely(!input.len().is_multiple_of(2)) {
         return Err(FromHexError::OddLength);
     }
     let input = strip_prefix(input);
