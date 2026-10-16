@@ -27,18 +27,13 @@ jobs:
             feature: avx2
           - triple: wasm32-wasip1
             feature: simd128
-        rust: [nightly, stable, 1.64]
+        rust: [nightly, stable, 1.89]
         exclude:
           # https://github.com/rust-lang/rust/issues/131031
           - target:
               triple: wasm32-wasip1
               feature: simd128
             rust: nightly
-          # In 1.64 it's still called wasm32-wasi
-          - target:
-              triple: wasm32-wasip1
-              feature: simd128
-            rust: 1.64
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -64,15 +59,15 @@ jobs:
       - run: cargo build --features serde
       - run: cargo build --no-default-features --features serde
       - run: cargo test --features serde
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
       - run: cargo test --no-default-features --features serde
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
       - run: cargo test --no-default-features --features serde,force-generic
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
       - run: cargo test --no-default-features --features serde,nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
 
       - name: Disable target feature
         run: echo RUSTFLAGS=${RUSTFLAGS_BAK}\ -Ctarget-feature=-${{ matrix.target.feature }} >> $GITHUB_ENV
@@ -80,15 +75,15 @@ jobs:
       - run: cargo build --features serde
       - run: cargo build --no-default-features --features serde
       - run: cargo test --features serde
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
       - run: cargo test --no-default-features --features serde
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
       - run: cargo test --no-default-features --features serde,force-generic
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
       - run: cargo test --no-default-features --features serde,nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
-        if: matrix.rust != '1.64'
+        if: matrix.rust != '1.89'
 
   miri:
     name: Miri

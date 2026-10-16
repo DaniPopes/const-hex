@@ -164,7 +164,7 @@ pub(crate) struct FormatterOutput<'a, 'b> {
 
 impl<'a, 'b> FormatterOutput<'a, 'b> {
     #[inline]
-    pub(crate) fn new(f: &'a mut fmt::Formatter<'b>) -> Self {
+    pub(crate) const fn new(f: &'a mut fmt::Formatter<'b>) -> Self {
         Self { f, result: Ok(()) }
     }
 
