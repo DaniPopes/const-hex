@@ -131,6 +131,7 @@ pub(crate) fn check(input: &[u8]) -> bool {
     }
 }
 
+#[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn check_avx2(input: &[u8]) -> bool {
     let digit_bias = _mm256_set1_epi8(0xB0_u8 as i8); // '0' + 0x80
@@ -139,17 +140,35 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
     let digit_threshold = _mm256_set1_epi8(-118); // i8::MIN + 10
     let alpha_threshold = _mm256_set1_epi8(-122); // i8::MIN + 6
 
+    let valid = |chunk: __m256i| {
+        let x1 = _mm256_sub_epi8(chunk, digit_bias);
+        let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
+
+        let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_bias);
+        let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
+
+        _mm256_or_si256(m1, m2)
+    };
+
+    let mut chunks = input.chunks_exact(128);
+    for chunk in &mut chunks {
+        let p = chunk.as_ptr().cast::<__m256i>();
+        let v01 = _mm256_and_si256(
+            valid(_mm256_loadu_si256(p)),
+            valid(_mm256_loadu_si256(p.add(1))),
+        );
+        let v23 = _mm256_and_si256(
+            valid(_mm256_loadu_si256(p.add(2))),
+            valid(_mm256_loadu_si256(p.add(3))),
+        );
+        if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
+            return false;
+        }
+    }
+
     generic::check_unaligned_chunks_with(
-        input,
-        |chunk| {
-            let x1 = _mm256_sub_epi8(chunk, digit_bias);
-            let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
-
-            let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_bias);
-            let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
-
-            _mm256_movemask_epi8(_mm256_or_si256(m1, m2)) == -1
-        },
+        chunks.remainder(),
+        |chunk| _mm256_movemask_epi8(valid(chunk)) == -1,
         |remainder| generic::check_one_unaligned_chunk(remainder, |c| check_chunk_sse2(c)),
     )
 }
@@ -239,7 +258,7 @@ unsafe fn nib2byte(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256
 ///
 /// Converts ASCII hex to nibble values and validates simultaneously:
 /// - Digits '0'..'9' → 0..9, letters 'A'..'F'/'a'..'f' → 10..15 via saturation arithmetic.
-/// - Invalid bytes produce values > 15, detected via `adds_epu8(nibble, 112)` setting the MSB.
+/// - Invalid bytes produce values > 15, detected by `testz(nibble, 0xF0)`.
 /// - Nibble pairs are merged with `maddubs(nibbles, 0x0110)` (hi*16 + lo).
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
@@ -261,7 +280,6 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
     let df = _mm256_set1_epi8(0xDFu8 as i8);
     let big_a = _mm256_set1_epi8(b'A' as i8);
     let ten = _mm256_set1_epi8(10);
-    let check_bias = _mm256_set1_epi8(112); // 127 - 15
     let weights = _mm256_set1_epi16(0x0110);
 
     generic::decode_checked_unaligned_chunks_with(
@@ -280,10 +298,8 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
             let n1 = _mm256_min_epu8(d1, a1);
             let n2 = _mm256_min_epu8(d2, a2);
 
-            // Validate: saturating add sets MSB if nibble > 15.
-            let c1 = _mm256_adds_epu8(n1, check_bias);
-            let c2 = _mm256_adds_epu8(n2, check_bias);
-            if _mm256_movemask_epi8(_mm256_or_si256(c1, c2)) != 0 {
+            // Validate: a nibble > 15 has a bit set in 0xF0.
+            if _mm256_testz_si256(_mm256_or_si256(n1, n2), f0) == 0 {
                 return None;
             }
 
@@ -299,7 +315,7 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
                 let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
                 let n = _mm256_min_epu8(d, a);
 
-                if _mm256_movemask_epi8(_mm256_adds_epu8(n, check_bias)) != 0 {
+                if _mm256_testz_si256(n, f0) == 0 {
                     return None;
                 }
 

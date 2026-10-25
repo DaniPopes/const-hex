@@ -277,7 +277,18 @@ fn check_simd_boundaries() {
         assert!(const_hex::check_raw(&valid_upper), "failed at size {size}");
         assert!(const_hex::check_raw(&valid_mixed), "failed at size {size}");
 
-        for pos in [0, size / 2, size.saturating_sub(1)] {
+        for pos in [
+            0,
+            size / 2,
+            size.saturating_sub(1),
+            31,
+            32,
+            64,
+            96,
+            127,
+            128,
+            224,
+        ] {
             if pos < size {
                 let mut invalid = valid_lower.clone().into_bytes();
                 invalid[pos] = b'g';
