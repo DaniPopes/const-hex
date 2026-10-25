@@ -305,6 +305,18 @@ fn encode_simd_boundaries() {
 
 #[test]
 #[cfg(feature = "alloc")]
+fn encode_upper_boundaries() {
+    for size in 0..=33 {
+        let input: Vec<u8> = (0..size)
+            .map(|i| (i as u8).wrapping_mul(37) ^ 0xa5)
+            .collect();
+        let expected: String = input.iter().map(|b| format!("{b:02X}")).collect();
+        assert_eq!(const_hex::encode_upper(&input), expected, "size {size}");
+    }
+}
+
+#[test]
+#[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
     for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
         let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();

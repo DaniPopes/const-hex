@@ -12,12 +12,35 @@ pub(crate) const USE_CHECK_FN: bool = false;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Output) {
-    for &byte in input {
-        let (high, low) = byte2hex::<UPPER>(byte);
-        output.write_byte(high);
-        output.write_byte(low);
+pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
+    let table = if UPPER { &ENCODE_UPPER } else { &ENCODE_LOWER };
+    while let &[a, b, c, d, ref rest @ ..] = input {
+        let chunk = table[a as usize] as u64
+            | (table[b as usize] as u64) << 16
+            | (table[c as usize] as u64) << 32
+            | (table[d as usize] as u64) << 48;
+        output.write(&chunk.to_le_bytes());
+        input = rest;
     }
+    for &byte in input {
+        output.write(&table[byte as usize].to_le_bytes());
+    }
+}
+
+/// Maps each byte to its two hex digits, high digit first in memory order.
+static ENCODE_LOWER: [u16; 256] = make_encode_table::<false>();
+/// Maps each byte to its two hex digits, high digit first in memory order.
+static ENCODE_UPPER: [u16; 256] = make_encode_table::<true>();
+
+const fn make_encode_table<const UPPER: bool>() -> [u16; 256] {
+    let mut table = [0; 256];
+    let mut i = 0;
+    while i < 256 {
+        let (high, low) = byte2hex::<UPPER>(i as u8);
+        table[i] = u16::from_le_bytes([high, low]);
+        i += 1;
+    }
+    table
 }
 
 /// Encodes unaligned chunks of `T` in `input` to `output` using `encode_chunk`.
