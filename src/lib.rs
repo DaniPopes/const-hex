@@ -612,17 +612,23 @@ pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; 
 /// `output` must be at least `2 * input.len()` bytes long.
 #[inline(always)]
 unsafe fn encode_uninit<const UPPER: bool>(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-    // Non-generic, so downstream crates call one copy compiled here.
-    unsafe fn lower(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-        imp::encode::<false>(input, output)
-    }
-    unsafe fn upper(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-        imp::encode::<true>(input, output)
-    }
-    if UPPER {
-        upper(input, output)
-    } else {
-        lower(input, output)
+    // x86 selects its kernels at runtime and never inlines them, so call one copy compiled here.
+    // Elsewhere the kernels inline into the caller, which keeps constant-length encodes unrolled.
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    return imp::encode::<UPPER>(input, output);
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        unsafe fn lower(input: &[u8], output: &mut [MaybeUninit<u8>]) {
+            imp::encode::<false>(input, output)
+        }
+        unsafe fn upper(input: &[u8], output: &mut [MaybeUninit<u8>]) {
+            imp::encode::<true>(input, output)
+        }
+        if UPPER {
+            upper(input, output)
+        } else {
+            lower(input, output)
+        }
     }
 }
 
