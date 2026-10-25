@@ -150,26 +150,20 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
         _mm256_or_si256(m1, m2)
     };
 
-    let mut chunks = input.chunks_exact(128);
-    for chunk in &mut chunks {
-        let p = chunk.as_ptr().cast::<__m256i>();
-        let v01 = _mm256_and_si256(
-            valid(_mm256_loadu_si256(p)),
-            valid(_mm256_loadu_si256(p.add(1))),
-        );
-        let v23 = _mm256_and_si256(
-            valid(_mm256_loadu_si256(p.add(2))),
-            valid(_mm256_loadu_si256(p.add(3))),
-        );
-        if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
-            return false;
-        }
-    }
-
     generic::check_unaligned_chunks_with(
-        chunks.remainder(),
-        |chunk| _mm256_movemask_epi8(valid(chunk)) == -1,
-        |remainder| generic::check_one_unaligned_chunk(remainder, |c| check_chunk_sse2(c)),
+        input,
+        |[c0, c1, c2, c3]: [__m256i; 4]| {
+            let v01 = _mm256_and_si256(valid(c0), valid(c1));
+            let v23 = _mm256_and_si256(valid(c2), valid(c3));
+            _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) == -1
+        },
+        |remainder| {
+            generic::check_unaligned_chunks_with(
+                remainder,
+                |chunk| _mm256_movemask_epi8(valid(chunk)) == -1,
+                |remainder| generic::check_one_unaligned_chunk(remainder, |c| check_chunk_sse2(c)),
+            )
+        },
     )
 }
 

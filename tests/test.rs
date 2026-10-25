@@ -267,7 +267,7 @@ const ALL_UPPER: &str = "000102030405060708090A0B0C0D0E0F101112131415161718191A1
 #[test]
 fn check_simd_boundaries() {
     for size in [
-        1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257,
+        1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 384,
     ] {
         let valid_lower: String = "a".repeat(size);
         let valid_upper: String = "F".repeat(size);
