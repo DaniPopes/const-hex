@@ -513,7 +513,7 @@ fn display_lengths() {
 
     // Inputs around the 1 KiB chunk size, with and without the prefix.
     for len in [
-        0_usize, 1, 31, 32, 33, 1023, 1024, 1025, 2047, 2048, 2049, 4097, 65537,
+        0_usize, 1, 31, 32, 33, 1023, 1024, 1025, 2047, 2048, 2049, 3073,
     ] {
         // Vary the bytes per chunk, so a repeated or misplaced chunk is detected.
         let data = (0..len)
