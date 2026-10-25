@@ -215,7 +215,8 @@ fn serde_lengths() {
     for len in [
         0, 1, 127, 128, 129, 159, 1023, 1024, 1025, 2047, 2048, 2049, 4095, 4096, 4097, 65537,
     ] {
-        let data = (0..len).map(|i| i as u8).collect::<Vec<u8>>();
+        // Vary the bytes per 1 KiB chunk, so a repeated or misplaced chunk is detected.
+        let data = (0..len).map(|i| (i + i / 1024) as u8).collect::<Vec<u8>>();
         let quoted = |s: String| format!("\"{s}\"");
         let lower = hex::encode(&data);
         let upper = lower.to_uppercase();
@@ -514,7 +515,10 @@ fn display_lengths() {
     for len in [
         0_usize, 1, 31, 32, 33, 1023, 1024, 1025, 2047, 2048, 2049, 4097, 65537,
     ] {
-        let data = (0..len).map(|i| (i * 7) as u8).collect::<Vec<u8>>();
+        // Vary the bytes per chunk, so a repeated or misplaced chunk is detected.
+        let data = (0..len)
+            .map(|i| (i * 7 + i / 1024) as u8)
+            .collect::<Vec<u8>>();
         let lower = hex::encode(&data);
         let upper = lower.to_uppercase();
         let display = const_hex::display(&data);
@@ -533,14 +537,14 @@ fn display_lengths() {
         assert_eq!(sink.writes.len(), ((len + 1023) / 1024).max(1), "len={len}");
         assert_eq!(sink.writes.iter().sum::<usize>(), len * 2 + 2, "len={len}");
 
-        // An error in a later chunk stops further writes.
-        if len > 1024 {
+        // An error in any chunk stops further writes.
+        for fail_at in 1..=sink.writes.len() {
             let mut sink = Sink {
                 writes: vec![],
-                fail_at: 2,
+                fail_at,
             };
-            assert_eq!(write!(sink, "{display}"), Err(fmt::Error), "len={len}");
-            assert_eq!(sink.writes.len(), 2, "len={len}");
+            assert_eq!(write!(sink, "{display:#x}"), Err(fmt::Error), "len={len}");
+            assert_eq!(sink.writes.len(), fail_at, "len={len}");
         }
     }
 }
