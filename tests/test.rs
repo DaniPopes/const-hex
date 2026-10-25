@@ -316,6 +316,36 @@ fn decode_simd_boundaries() {
         let mut output = vec![0u8; size];
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
+
+        let upper = hex.to_ascii_uppercase();
+        assert_eq!(
+            const_hex::decode(&upper).unwrap(),
+            bytes,
+            "upper, size {size}"
+        );
+
+        // An invalid character at every position is reported at that index, even with a later one.
+        let invalid = [b'g', b'/', b':', b'@', b'`', 0x80, 0xff];
+        let step = if cfg!(miri) { 7 } else { 1 };
+        for pos in (0..hex.len()).step_by(step) {
+            for c in invalid {
+                let mut bad = hex.clone().into_bytes();
+                bad[pos] = c;
+                let expected = Err(const_hex::FromHexError::InvalidHexCharacter {
+                    c: c as char,
+                    index: pos,
+                });
+                assert_eq!(const_hex::decode(&bad), expected, "size {size}");
+                assert_eq!(
+                    const_hex::decode_to_slice(&bad, &mut output),
+                    expected.clone().map(|_| ())
+                );
+                if pos + 1 < bad.len() {
+                    *bad.last_mut().unwrap() = b'g';
+                    assert_eq!(const_hex::decode(&bad), expected, "size {size}, two errors");
+                }
+            }
+        }
     }
 }
 

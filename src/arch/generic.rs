@@ -128,6 +128,15 @@ const fn check_u64_mask(x: u64) -> u64 {
     (x | !valid) & HIGH
 }
 
+/// Decodes 8 valid hex characters into 4 bytes.
+const fn decode_u64(x: u64) -> u32 {
+    // '0'..='9' -> 0..=9; 'A'..='F' and 'a'..='f' have bit 6 set -> (x & 0xF) + 9.
+    let n = (x & (ONES * 0x0F)) + ((x >> 6) & ONES) * 9;
+    let t = ((n << 4) | (n >> 8)) & 0x00FF_00FF_00FF_00FF;
+    let t = (t | (t >> 8)) & 0x0000_FFFF_0000_FFFF;
+    (t | (t >> 16)) as u32
+}
+
 /// Runs the given check function on unaligned chunks of `T` in `input`, with the remainder passed
 /// to the generic [`check`].
 #[inline]
@@ -173,6 +182,7 @@ pub(crate) fn check_one_unaligned_chunk<T: Copy>(
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2`.
+#[inline]
 #[allow(dead_code)]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     unsafe { decode_maybe_check::<true>(input, output) }
@@ -199,6 +209,20 @@ unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], mut output: impl O
     let l = output.remaining().unwrap_or(input.len() / 2);
     debug_assert_eq!(l, input.len() / 2);
     let mut i = 0;
+    // 32-bit targets without SIMD emulate `u64`, which makes this slower than the loop below.
+    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
+        while i + 8 <= l {
+            let p = unsafe { input.as_ptr().add(i * 2) };
+            let x = u64::from_le_bytes(unsafe { p.cast::<[u8; 8]>().read_unaligned() });
+            let y = u64::from_le_bytes(unsafe { p.add(8).cast::<[u8; 8]>().read_unaligned() });
+            if CHECK && check_u64_mask(x) | check_u64_mask(y) != 0 {
+                return false;
+            }
+            let t = decode_u64(x) as u64 | (decode_u64(y) as u64) << 32;
+            output.write(&t.to_le_bytes());
+            i += 8;
+        }
+    }
     while i < l {
         let hex = unsafe { *input.get_unchecked(i * 2) };
         let high = HEX_DECODE_LUT[hex as usize];
