@@ -612,11 +612,17 @@ pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; 
 /// `output` must be at least `2 * input.len()` bytes long.
 #[inline(always)]
 unsafe fn encode_uninit<const UPPER: bool>(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-    // x86 selects its kernels at runtime and never inlines them, so call one copy compiled here.
+    // The x86 kernels are selected at runtime and never inlined, so call one copy compiled here.
     // Elsewhere the kernels inline into the caller, which keeps constant-length encodes unrolled.
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    #[cfg(not(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        not(any(feature = "force-generic", feature = "portable-simd"))
+    )))]
     return imp::encode::<UPPER>(input, output);
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        not(any(feature = "force-generic", feature = "portable-simd"))
+    ))]
     {
         unsafe fn lower(input: &[u8], output: &mut [MaybeUninit<u8>]) {
             imp::encode::<false>(input, output)
@@ -648,7 +654,7 @@ fn encode_inner<const UPPER: bool, const PREFIX: bool>(data: &[u8]) -> String {
             output = output.get_unchecked_mut(2..);
         }
     }
-    // SAFETY: `output` is long enough (data.len() * 2), `encode` fully writes all bytes,
+    // SAFETY: `output` is long enough (data.len() * 2), `encode_uninit` fully writes all bytes,
     // then `set_len` is called only after successful encode.
     // We only write ASCII bytes, which are valid UTF-8.
     unsafe {
