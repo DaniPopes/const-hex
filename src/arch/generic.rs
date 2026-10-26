@@ -13,25 +13,28 @@ pub(crate) const USE_CHECK_FN: bool = false;
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
 pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
+    // On 32-bit targets `u64` is emulated, and this loop is slower than the per-byte loop.
     if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
-        const ONES: u64 = 0x0101_0101_0101_0101;
-
         // Encodes 4 bytes into 8 hex digits in memory order.
-        let swar = |bytes: [u8; 4]| {
+        while let &[a, b, c, d, ref rest @ ..] = input {
+            let x = u32::from_le_bytes([a, b, c, d]) as u64;
             // Spread the 4 bytes to every other byte, then split each into its high and low nibble.
-            let x = u32::from_le_bytes(bytes) as u64;
             let x = (x | (x << 16)) & 0x0000_FFFF_0000_FFFF;
             let x = (x | (x << 8)) & 0x00FF_00FF_00FF_00FF;
-            let n = ((x >> 4) & 0x000F_000F_000F_000F) | ((x & 0x000F_000F_000F_000F) << 8);
+            let n = ((x >> 4) | (x << 8)) & 0x0F0F_0F0F_0F0F_0F0F;
             // Nibbles 10..=15 get the extra offset from '9' + 1 to 'a' (or 'A').
             let gt9 = ((n + ONES * 6) >> 4) & ONES;
-            (n + ONES * b'0' as u64 + gt9 * if UPPER { 7 } else { 39 }).to_le_bytes()
-        };
-        while let &[a, b, c, d, ref rest @ ..] = input {
-            output.write(&swar([a, b, c, d]));
+            let chunk = n + ONES * b'0' as u64 + gt9 * if UPPER { 7 } else { 39 };
+            output.write(&chunk.to_le_bytes());
             input = rest;
         }
     }
+    encode_bytes::<UPPER>(input, output);
+}
+
+/// Encodes `input` one byte at a time.
+#[inline]
+unsafe fn encode_bytes<const UPPER: bool>(input: &[u8], mut output: impl Output) {
     for &byte in input {
         let (high, low) = byte2hex::<UPPER>(byte);
         output.write_byte(high);
@@ -41,7 +44,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: imp
 
 /// Encodes unaligned chunks of `T` in `input` to `output` using `encode_chunk`.
 ///
-/// The remainder is encoded using the generic [`encode`].
+/// The remainder is encoded using [`encode_bytes`].
 #[inline]
 #[allow(dead_code)]
 pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy>(
@@ -54,7 +57,7 @@ pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy
     for chunk in chunks {
         output.write(as_bytes(&encode_chunk(chunk)));
     }
-    unsafe { encode::<UPPER>(remainder, output) };
+    unsafe { encode_bytes::<UPPER>(remainder, output) };
 }
 
 /// Like [`encode_unaligned_chunks`], but with a custom remainder handler.
@@ -98,9 +101,9 @@ pub(crate) unsafe fn encode_one_unaligned_chunk<const UPPER: bool, T: Copy, U: C
         let (l, r) = input.split_at(size_of::<T>());
         let chunk = l.as_ptr().cast::<T>().read_unaligned();
         output.write(as_bytes(&encode_chunk(chunk)));
-        encode::<UPPER>(r, output);
+        encode_bytes::<UPPER>(r, output);
     } else {
-        encode::<UPPER>(input, output);
+        encode_bytes::<UPPER>(input, output);
     }
 }
 
