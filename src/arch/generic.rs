@@ -12,6 +12,7 @@ pub(crate) const USE_CHECK_FN: bool = false;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
+#[allow(dead_code)]
 pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
     // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
     // per-byte loop.
