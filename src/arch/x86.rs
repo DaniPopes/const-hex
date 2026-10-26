@@ -288,6 +288,11 @@ unsafe fn nib2byte(a1: __m256i, b1: __m256i, a2: __m256i, b2: __m256i) -> __m256
 /// - Nibble pairs are merged with `maddubs(nibbles, 0x0110)` (hi*16 + lo).
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even, because the
+/// AVX2 tails overlap on hex pairs.
 #[inline]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     if has_avx2() {
@@ -296,6 +301,10 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
     generic::decode_checked(input, output)
 }
 
+/// # Safety
+///
+/// The CPU must support AVX2, `output.len()` must equal `input.len() / 2`, and `input.len()`
+/// must be even.
 #[target_feature(enable = "avx2")]
 unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     debug_assert_eq!(output.len(), input.len() / 2);
