@@ -304,41 +304,34 @@ fn check_simd_boundaries() {
     }
 }
 
-/// Every length up to 65 bytes, then lengths around the following 16-byte boundaries.
-fn encode_lengths() -> impl Iterator<Item = usize> {
-    (0..=65).chain([100, 127, 128, 129, 255, 256])
-}
-
-/// Sequential bytes, and a scrambled pattern that does not repeat within a 16-byte chunk.
-fn encode_inputs(size: usize) -> [Vec<u8>; 2] {
-    [
-        (0..size).map(|i| i as u8).collect(),
-        (0..size).map(|i| (i * 7 + 0x9d) as u8).collect(),
-    ]
-}
-
-fn encode_expected(input: &[u8], upper: bool) -> String {
-    if upper {
-        hex::encode_upper(input)
-    } else {
-        hex::encode(input)
-    }
+/// Sequential and pseudo-random inputs around every SIMD tail and chunk boundary.
+fn boundary_inputs() -> impl Iterator<Item = Vec<u8>> {
+    (0..=65usize)
+        .chain([100, 127, 128, 129, 255, 256])
+        .flat_map(|size| {
+            [
+                (0..size).map(|i| i as u8).collect(),
+                (0..size)
+                    .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
+                    .collect(),
+            ]
+        })
 }
 
 #[test]
 #[cfg(feature = "alloc")]
 fn encode_simd_boundaries() {
-    for size in encode_lengths() {
-        for input in encode_inputs(size) {
-            for upper in [false, true] {
-                let encoded = if upper {
-                    const_hex::encode_upper(&input)
-                } else {
-                    const_hex::encode(&input)
-                };
-                assert_eq!(encoded, encode_expected(&input, upper), "size {size}");
-            }
-        }
+    for input in boundary_inputs() {
+        let size = input.len();
+        let encoded = const_hex::encode(&input);
+        assert_eq!(encoded.len(), size * 2, "encode failed at size {size}");
+
+        let expected: String = input.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(encoded, expected, "encode mismatch at size {size}");
+
+        let encoded = const_hex::encode_upper(&input);
+        let expected: String = input.iter().map(|b| format!("{b:02X}")).collect();
+        assert_eq!(encoded, expected, "encode_upper mismatch at size {size}");
     }
 }
 
@@ -360,30 +353,31 @@ fn decode_simd_boundaries() {
 
 #[test]
 fn encode_to_slice_simd_boundaries() {
-    for size in encode_lengths() {
-        for input in encode_inputs(size) {
-            for upper in [false, true] {
-                // Surround the output with guard bytes to detect writes out of bounds.
-                let mut output = vec![0xAA; size * 2 + 32];
-                let out = &mut output[16..16 + size * 2];
-                if upper {
-                    const_hex::encode_to_slice_upper(&input, out).unwrap();
-                } else {
-                    const_hex::encode_to_slice(&input, out).unwrap();
-                }
-
-                let expected = encode_expected(&input, upper);
-                assert_eq!(
-                    &output[16..16 + size * 2],
-                    expected.as_bytes(),
-                    "size {size}"
-                );
-                assert!(output[..16].iter().all(|&b| b == 0xAA), "size {size}");
-                assert!(
-                    output[16 + size * 2..].iter().all(|&b| b == 0xAA),
-                    "size {size}"
-                );
-            }
+    for input in boundary_inputs() {
+        let size = input.len();
+        for upper in [false, true] {
+            // The guard bytes before and after the output must stay untouched.
+            let mut output = vec![0xAA; size * 2 + 32];
+            let expected: String = if upper {
+                const_hex::encode_to_slice_upper(&input, &mut output[16..16 + size * 2]).unwrap();
+                input.iter().map(|b| format!("{b:02X}")).collect()
+            } else {
+                const_hex::encode_to_slice(&input, &mut output[16..16 + size * 2]).unwrap();
+                input.iter().map(|b| format!("{b:02x}")).collect()
+            };
+            assert_eq!(
+                &output[16..16 + size * 2],
+                expected.as_bytes(),
+                "mismatch at size {size}, upper: {upper}"
+            );
+            assert!(
+                output[..16].iter().all(|&b| b == 0xAA),
+                "underrun at size {size}, upper: {upper}"
+            );
+            assert!(
+                output[16 + size * 2..].iter().all(|&b| b == 0xAA),
+                "overrun at size {size}, upper: {upper}"
+            );
         }
     }
 }
@@ -393,17 +387,13 @@ fn encode_to_slice_simd_boundaries() {
 #[cfg(feature = "alloc")]
 fn encode_simd_boundaries_buffer_display() {
     fn buffer<const N: usize>() {
-        for input in encode_inputs(N) {
+        for input in boundary_inputs().filter(|input| input.len() == N) {
             let input: [u8; N] = input.try_into().unwrap();
             let mut buffer = Buffer::<N, false>::new();
-            assert_eq!(
-                &*buffer.format(&input),
-                encode_expected(&input, false),
-                "size {N}"
-            );
+            assert_eq!(&*buffer.format(&input), hex::encode(input), "size {N}");
             assert_eq!(
                 &*buffer.format_upper(&input),
-                encode_expected(&input, true),
+                hex::encode_upper(input),
                 "size {N}"
             );
         }
@@ -414,19 +404,18 @@ fn encode_simd_boundaries_buffer_display() {
     }
     buffers!(0 1 2 3 4 5 7 8 9 15 16 17 24 31 32 33 63 64 65 129);
 
-    for size in encode_lengths() {
-        for input in encode_inputs(size) {
-            assert_eq!(
-                format!("{}", const_hex::display(&input)),
-                encode_expected(&input, false),
-                "size {size}"
-            );
-            assert_eq!(
-                format!("{:#X}", const_hex::display(&input)),
-                format!("0x{}", encode_expected(&input, true)),
-                "size {size}"
-            );
-        }
+    for input in boundary_inputs() {
+        let size = input.len();
+        assert_eq!(
+            format!("{}", const_hex::display(&input)),
+            hex::encode(&input),
+            "size {size}"
+        );
+        assert_eq!(
+            format!("{:#X}", const_hex::display(&input)),
+            format!("0x{}", hex::encode_upper(&input)),
+            "size {size}"
+        );
     }
 }
 
