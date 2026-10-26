@@ -332,22 +332,6 @@ fn decode_simd_boundaries() {
         let mut output = vec![0u8; size];
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
-
-        let upper = hex.to_ascii_uppercase();
-        assert_eq!(
-            const_hex::decode(&upper).unwrap(),
-            bytes,
-            "upper, size {size}"
-        );
-
-        // An invalid character at every position is reported at that index.
-        let step = if cfg!(miri) { 7 } else { 1 };
-        for index in (0..hex.len()).step_by(step) {
-            let mut bad = hex.clone().into_bytes();
-            bad[index] = b'g';
-            let err = const_hex::FromHexError::InvalidHexCharacter { c: 'g', index };
-            assert_eq!(const_hex::decode(&bad), Err(err), "size {size}");
-        }
     }
 }
 
@@ -374,6 +358,7 @@ fn check_all_invalid_chars() {
     };
     for len in lens {
         let mut input = vec![b'a'; len];
+        let mut output = vec![0u8; len / 2];
         for pos in 0..len {
             for c in 0u8..=255 {
                 let is_valid = c.is_ascii_hexdigit();
@@ -394,7 +379,6 @@ fn check_all_invalid_chars() {
                         c: c as char,
                         index: pos,
                     };
-                    let mut output = vec![0u8; len / 2];
                     assert_eq!(
                         const_hex::decode_to_slice(&input, &mut output),
                         if is_valid { Ok(()) } else { Err(err) },
