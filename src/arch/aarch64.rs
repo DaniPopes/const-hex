@@ -29,6 +29,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
     encode_neon::<UPPER>(input, output);
 }
 
+#[inline]
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], mut output: impl Output) {
     let table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
