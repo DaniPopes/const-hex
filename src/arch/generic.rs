@@ -133,6 +133,7 @@ pub(crate) const fn check(mut input: &[u8]) -> bool {
 
 const ONES: u64 = 0x0101_0101_0101_0101;
 const HIGH: u64 = ONES * 0x80;
+
 /// Returns the high bit of each byte of `x` that is not an ASCII hex digit.
 const fn check_u64_mask(x: u64) -> u64 {
     // Clear the high bits so that the additions below cannot carry between bytes.
@@ -145,6 +146,7 @@ const fn check_u64_mask(x: u64) -> u64 {
     let valid = (ge0 & !gt9) | (gea & !gtf);
     (x | !valid) & HIGH
 }
+
 /// Decodes 8 valid hex characters into 4 bytes.
 const fn decode_u64(x: u64) -> u32 {
     // '0'..='9' -> 0..=9; 'A'..='F' and 'a'..='f' have bit 6 set -> (x & 0xF) + 9.
@@ -222,24 +224,23 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: impl Output) {
 ///
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex if `CHECK` is `true`.
 #[inline(always)]
-unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], mut output: impl Output) -> bool {
-    let l = output.remaining().unwrap_or(input.len() / 2);
-    debug_assert_eq!(l, input.len() / 2);
-    let mut i = 0;
-    // 32-bit targets without SIMD emulate `u64`, which makes this slower than the loop below.
+unsafe fn decode_maybe_check<const CHECK: bool>(mut input: &[u8], mut output: impl Output) -> bool {
+    // On 32-bit targets `u64` is emulated, which makes this slower than the loop below.
     if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
-        while i + 8 <= l {
-            let p = unsafe { input.as_ptr().add(i * 2) };
-            let x = u64::from_le_bytes(unsafe { p.cast::<[u8; 8]>().read_unaligned() });
-            let y = u64::from_le_bytes(unsafe { p.add(8).cast::<[u8; 8]>().read_unaligned() });
+        let (chunks, rest) = chunks_unaligned::<[[u8; 8]; 2]>(input);
+        for [x, y] in chunks {
+            let (x, y) = (u64::from_le_bytes(x), u64::from_le_bytes(y));
             if CHECK && check_u64_mask(x) | check_u64_mask(y) != 0 {
                 return false;
             }
-            let t = decode_u64(x) as u64 | (decode_u64(y) as u64) << 32;
-            output.write(&t.to_le_bytes());
-            i += 8;
+            output.write(&decode_u64(x).to_le_bytes());
+            output.write(&decode_u64(y).to_le_bytes());
         }
+        input = rest;
     }
+    let l = output.remaining().unwrap_or(input.len() / 2);
+    debug_assert_eq!(l, input.len() / 2);
+    let mut i = 0;
     while i < l {
         let hex = unsafe { *input.get_unchecked(i * 2) };
         let high = HEX_DECODE_LUT[hex as usize];

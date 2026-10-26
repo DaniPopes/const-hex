@@ -309,7 +309,9 @@ fn encode_simd_boundaries() {
 #[test]
 #[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
+    for size in [
+        1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
+    ] {
         let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
 
@@ -327,27 +329,14 @@ fn decode_simd_boundaries() {
             "upper, size {size}"
         );
 
-        // An invalid character at every position is reported at that index, even with a later one.
-        let invalid = [b'g', b'/', b':', b'@', b'`', 0x80, 0xff];
+        // The first invalid character is reported even when a later one follows.
         let step = if cfg!(miri) { 7 } else { 1 };
-        for pos in (0..hex.len()).step_by(step) {
-            for c in invalid {
-                let mut bad = hex.clone().into_bytes();
-                bad[pos] = c;
-                let expected = Err(const_hex::FromHexError::InvalidHexCharacter {
-                    c: c as char,
-                    index: pos,
-                });
-                assert_eq!(const_hex::decode(&bad), expected, "size {size}");
-                assert_eq!(
-                    const_hex::decode_to_slice(&bad, &mut output),
-                    expected.clone().map(|_| ())
-                );
-                if pos + 1 < bad.len() {
-                    *bad.last_mut().unwrap() = b'g';
-                    assert_eq!(const_hex::decode(&bad), expected, "size {size}, two errors");
-                }
-            }
+        for index in (0..hex.len() - 1).step_by(step) {
+            let mut bad = hex.clone().into_bytes();
+            bad[index] = b'g';
+            bad[hex.len() - 1] = b'g';
+            let err = const_hex::FromHexError::InvalidHexCharacter { c: 'g', index };
+            assert_eq!(const_hex::decode(&bad), Err(err), "size {size}");
         }
     }
 }
@@ -367,9 +356,9 @@ fn encode_to_slice_simd_boundaries() {
 
 #[test]
 fn check_all_invalid_chars() {
-    // Miri is slow; 25 bytes still reaches the 16-byte, 8-byte, and tail paths.
+    // Miri is slow; 26 bytes still reaches the 16-byte, 8-byte, and tail paths.
     let lens = if cfg!(miri) {
-        vec![1, 25]
+        vec![1, 26]
     } else {
         (1..=33).collect()
     };
@@ -390,6 +379,18 @@ fn check_all_invalid_chars() {
                     is_valid,
                     "const: char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
                 );
+                if len % 2 == 0 {
+                    let err = const_hex::FromHexError::InvalidHexCharacter {
+                        c: c as char,
+                        index: pos,
+                    };
+                    let mut output = vec![0u8; len / 2];
+                    assert_eq!(
+                        const_hex::decode_to_slice(&input, &mut output),
+                        if is_valid { Ok(()) } else { Err(err) },
+                        "decode: char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
+                    );
+                }
             }
             input[pos] = b'a';
         }
