@@ -330,14 +330,37 @@ fn decode_simd_boundaries() {
 
 #[test]
 fn encode_to_slice_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
-        let input: Vec<u8> = (0..size).map(|i| i as u8).collect();
-        let mut output = vec![0u8; size * 2];
+    for size in (0..=40).chain([63, 64, 65, 127, 128, 129]) {
+        let input: Vec<u8> = (0..size)
+            .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
+            .collect();
 
-        const_hex::encode_to_slice(&input, &mut output).unwrap();
-
+        // The trailing guard bytes must stay untouched.
+        let mut output = vec![0xAA; size * 2 + 32];
+        const_hex::encode_to_slice(&input, &mut output[..size * 2]).unwrap();
         let expected: String = input.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(output, expected.as_bytes(), "mismatch at size {size}");
+        assert_eq!(
+            &output[..size * 2],
+            expected.as_bytes(),
+            "mismatch at size {size}"
+        );
+        assert!(
+            output[size * 2..].iter().all(|&b| b == 0xAA),
+            "overrun at size {size}"
+        );
+
+        let mut output = vec![0xAA; size * 2 + 32];
+        const_hex::encode_to_slice_upper(&input, &mut output[..size * 2]).unwrap();
+        let expected: String = input.iter().map(|b| format!("{b:02X}")).collect();
+        assert_eq!(
+            &output[..size * 2],
+            expected.as_bytes(),
+            "upper mismatch at size {size}"
+        );
+        assert!(
+            output[size * 2..].iter().all(|&b| b == 0xAA),
+            "upper overrun at size {size}"
+        );
     }
 }
 
