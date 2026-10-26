@@ -12,6 +12,7 @@ pub(crate) const USE_CHECK_FN: bool = false;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
+// Mirrors the backend selection in `arch/mod.rs`.
 #[cfg(any(
     feature = "force-generic",
     not(any(
@@ -25,11 +26,9 @@ pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: imp
     if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
         // Encodes 4 bytes into 8 hex digits in memory order.
         while let &[a, b, c, d, ref rest @ ..] = input {
-            let x = u32::from_le_bytes([a, b, c, d]) as u64;
-            // Spread the 4 bytes to every other byte, then split each into its high and low nibble.
-            let x = (x | (x << 16)) & 0x0000_FFFF_0000_FFFF;
-            let x = (x | (x << 8)) & 0x00FF_00FF_00FF_00FF;
-            let n = ((x >> 4) | (x << 8)) & 0x0F0F_0F0F_0F0F_0F0F;
+            // Split each byte into its high and low nibble.
+            let x = u64::from_le_bytes([a, 0, b, 0, c, 0, d, 0]);
+            let n = ((x >> 4) | (x << 8)) & (ONES * 0x0F);
             // Nibbles 10..=15 get the extra offset from '9' + 1 to 'a' (or 'A').
             let gt9 = ((n + ONES * 6) >> 4) & ONES;
             let chunk = n + ONES * b'0' as u64 + gt9 * if UPPER { 7 } else { 39 };
