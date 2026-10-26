@@ -156,7 +156,7 @@ pub(crate) fn check_unaligned_chunks<T: Copy>(
     check_chunk: impl FnMut(T) -> bool,
 ) -> bool {
     let (mut chunks, remainder) = chunks_unaligned(input);
-    chunks.all(check_chunk) && check(remainder)
+    chunks.all(check_chunk) && (remainder.is_empty() || check(remainder))
 }
 
 /// Default checked decoding function.

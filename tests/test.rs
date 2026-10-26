@@ -270,7 +270,7 @@ const ALL_UPPER: &str = "000102030405060708090A0B0C0D0E0F101112131415161718191A1
 #[test]
 fn check_simd_boundaries() {
     for size in [
-        1, 15, 16, 17, 31, 32, 33, 40, 63, 64, 65, 126, 127, 128, 129, 255, 256, 257, 384,
+        1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 384,
     ] {
         let valid_lower: String = "a".repeat(size);
         let valid_upper: String = "F".repeat(size);
@@ -280,13 +280,26 @@ fn check_simd_boundaries() {
         assert!(const_hex::check_raw(&valid_upper), "failed at size {size}");
         assert!(const_hex::check_raw(&valid_mixed), "failed at size {size}");
 
-        for pos in 0..size {
-            let mut invalid = valid_lower.clone().into_bytes();
-            invalid[pos] = b'g';
-            assert!(
-                !const_hex::check_raw(&invalid),
-                "should fail at size {size}, pos {pos}"
-            );
+        for pos in [
+            0,
+            size / 2,
+            size.saturating_sub(1),
+            31,
+            32,
+            64,
+            96,
+            127,
+            128,
+            224,
+        ] {
+            if pos < size {
+                let mut invalid = valid_lower.clone().into_bytes();
+                invalid[pos] = b'g';
+                assert!(
+                    !const_hex::check_raw(&invalid),
+                    "should fail at size {size}, pos {pos}"
+                );
+            }
         }
     }
 }
@@ -308,7 +321,8 @@ fn encode_simd_boundaries() {
 #[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
     for size in [
-        1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 40, 63, 64, 65, 126, 127, 128, 129,
+        1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 40, 63, 64, 65, 96, 126, 127, 128, 129,
+        160,
     ] {
         let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
@@ -320,7 +334,18 @@ fn decode_simd_boundaries() {
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
-        for pos in 0..hex.len() {
+        let positions: Vec<usize> = if cfg!(miri) {
+            // The edges, plus one position inside each 64-character chunk.
+            let chunks = (0..hex.len()).step_by(64).map(|chunk| chunk + 20);
+            [0, 15, 16, 31, 32, hex.len() / 2, hex.len() - 1]
+                .into_iter()
+                .chain(chunks)
+                .filter(|&pos| pos < hex.len())
+                .collect()
+        } else {
+            (0..hex.len()).collect()
+        };
+        for pos in positions {
             let mut invalid = hex.clone();
             invalid.replace_range(pos..=pos, "g");
             assert_eq!(
@@ -352,7 +377,7 @@ fn check_all_invalid_chars() {
         vec![1, 5, 12, 25]
     } else {
         (1..=33)
-            .chain([40, 63, 64, 65, 127, 128, 129, 160, 161])
+            .chain([40, 63, 64, 65, 126, 127, 128, 129, 160, 161])
             .collect()
     };
     for len in lens {

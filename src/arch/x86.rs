@@ -153,35 +153,37 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
     let len = input.len();
     let ptr = input.as_ptr();
 
-    if len >= 32 {
-        let mut tail = input;
-        if len >= 128 {
-            let mut chunks = input.chunks_exact(128);
-            for chunk in &mut chunks {
-                let [c0, c1, c2, c3] = chunk.as_ptr().cast::<[__m256i; 4]>().read_unaligned();
-                let v01 = _mm256_and_si256(valid(c0), valid(c1));
-                let v23 = _mm256_and_si256(valid(c2), valid(c3));
-                if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
-                    return false;
-                }
-            }
-            tail = chunks.remainder();
-        }
-
-        let check32 = |chunk: __m256i| _mm256_movemask_epi8(valid(chunk)) == -1;
-        let mut chunks = tail.chunks_exact(32);
+    let mut tail = input;
+    if len >= 128 {
+        let mut chunks = input.chunks_exact(128);
         for chunk in &mut chunks {
-            if !check32(chunk.as_ptr().cast::<__m256i>().read_unaligned()) {
+            let [c0, c1, c2, c3] = chunk.as_ptr().cast::<[__m256i; 4]>().read_unaligned();
+            let v01 = _mm256_and_si256(valid(c0), valid(c1));
+            let v23 = _mm256_and_si256(valid(c2), valid(c3));
+            if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
                 return false;
             }
         }
-        // Re-check the last 32 bytes, overlapping what was already checked.
-        chunks.remainder().is_empty()
-            || check32(ptr.add(len - 32).cast::<__m256i>().read_unaligned())
+        tail = chunks.remainder();
+    }
+
+    let check32 = |chunk: __m256i| _mm256_movemask_epi8(valid(chunk)) == -1;
+    let mut chunks = tail.chunks_exact(32);
+    for chunk in &mut chunks {
+        if !check32(chunk.as_ptr().cast::<__m256i>().read_unaligned()) {
+            return false;
+        }
+    }
+    if chunks.remainder().is_empty() {
+        return true;
+    }
+
+    // Re-check the last chunk, overlapping what was already checked.
+    if len >= 32 {
+        check32(ptr.add(len - 32).cast::<__m256i>().read_unaligned())
     } else if len >= 16 {
-        let first = valid_sse2(_mm_loadu_si128(ptr.cast()));
-        let last = valid_sse2(_mm_loadu_si128(ptr.add(len - 16).cast()));
-        _mm_movemask_epi8(_mm_and_si128(first, last)) == 0xffff
+        let v = _mm256_loadu2_m128i(ptr.add(len - 16).cast(), ptr.cast());
+        _mm256_movemask_epi8(valid(v)) == -1
     } else if len >= 8 {
         let first = _mm_loadl_epi64(ptr.cast());
         let last = _mm_loadl_epi64(ptr.add(len - 8).cast());
@@ -302,27 +304,39 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
     let ip = input.as_ptr();
     let op = output.as_mut_ptr().cast::<u8>();
 
+    if len < 8 {
+        return generic::decode_checked(input, output);
+    }
+
     // Every branch decodes the last chunk last, overlapping what was already decoded.
     // `len` is even, so the overlapping chunk starts on a hex pair and rewrites the same bytes.
     if len >= 64 {
-        for i in 0..len / 64 {
-            if !decode_64(ip.add(i * 64), op.add(i * 32)) {
+        for i in 0..len / 128 {
+            if !decode_128(ip.add(i * 128), op.add(i * 64)) {
                 return false;
             }
         }
-        match len % 64 {
+        let remainder = len % 128;
+        match remainder {
             0 => true,
-            1..=32 => decode_32(ip.add(len - 32), op.add((len - 32) / 2)),
-            _ => decode_64(ip.add(len - 64), op.add((len - 64) / 2)),
+            1..=32 => decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2)),
+            33..=64 => decode_64(ip.add(len - 64), op.add((len - 64) / 2)),
+            65..=96 => {
+                decode_64(ip.add(len - remainder), op.add((len - remainder) / 2))
+                    && decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2))
+            }
+            _ => {
+                decode_64(ip.add(len - remainder), op.add((len - remainder) / 2))
+                    && decode_64(ip.add(len - 64), op.add((len - 64) / 2))
+            }
         }
     } else if len >= 32 {
-        decode_32(ip, op) && (len == 32 || decode_32(ip.add(len - 32), op.add((len - 32) / 2)))
+        decode_16_32(ip, 32, op)
+            && (len == 32 || decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2)))
     } else if len >= 16 {
-        decode_16_31(ip, len, op)
-    } else if len >= 8 {
-        decode_8_15(ip, len, op)
+        decode_16_32(ip, len, op)
     } else {
-        generic::decode_checked(input, output)
+        decode_8_15(ip, len, op)
     }
 }
 
@@ -345,6 +359,39 @@ unsafe fn nibbles_avx2(v: __m256i) -> __m256i {
 
     // Valid nibble wins (0..15), invalid stays > 15.
     _mm256_min_epu8(d, a)
+}
+
+/// Decodes 128 hex characters to 64 bytes. Returns `false` if any is invalid.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_128(ip: *const u8, op: *mut u8) -> bool {
+    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
+    let weights = _mm256_set1_epi16(0x0110);
+
+    let n1 = nibbles_avx2(_mm256_loadu_si256(ip.cast()));
+    let n2 = nibbles_avx2(_mm256_loadu_si256(ip.add(32).cast()));
+    let n3 = nibbles_avx2(_mm256_loadu_si256(ip.add(64).cast()));
+    let n4 = nibbles_avx2(_mm256_loadu_si256(ip.add(96).cast()));
+
+    let invalid = _mm256_or_si256(_mm256_or_si256(n1, n2), _mm256_or_si256(n3, n4));
+    if _mm256_testz_si256(invalid, f0) == 0 {
+        return false;
+    }
+
+    let p1 = _mm256_packus_epi16(
+        _mm256_maddubs_epi16(n1, weights),
+        _mm256_maddubs_epi16(n2, weights),
+    );
+    let p2 = _mm256_packus_epi16(
+        _mm256_maddubs_epi16(n3, weights),
+        _mm256_maddubs_epi16(n4, weights),
+    );
+    _mm256_storeu_si256(op.cast(), _mm256_permute4x64_epi64(p1, 0b11_01_10_00));
+    _mm256_storeu_si256(
+        op.add(32).cast(),
+        _mm256_permute4x64_epi64(p2, 0b11_01_10_00),
+    );
+    true
 }
 
 /// Decodes 64 hex characters to 32 bytes. Returns `false` if any is invalid.
@@ -370,29 +417,10 @@ unsafe fn decode_64(ip: *const u8, op: *mut u8) -> bool {
     true
 }
 
-/// Decodes 32 hex characters to 16 bytes. Returns `false` if any is invalid.
+/// Decodes the first and last 16 characters of a `16..=32` character input in one pass.
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn decode_32(ip: *const u8, op: *mut u8) -> bool {
-    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
-    let weights = _mm256_set1_epi16(0x0110);
-
-    let n = nibbles_avx2(_mm256_loadu_si256(ip.cast()));
-    if _mm256_testz_si256(n, f0) == 0 {
-        return false;
-    }
-
-    let merged = _mm256_maddubs_epi16(n, weights);
-    let packed = _mm256_packus_epi16(merged, _mm256_setzero_si256());
-    let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-    _mm_storeu_si128(op.cast(), _mm256_castsi256_si128(result));
-    true
-}
-
-/// Decodes the first and last 16 characters of a `16..=31` character input in one pass.
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn decode_16_31(ip: *const u8, len: usize, op: *mut u8) -> bool {
+unsafe fn decode_16_32(ip: *const u8, len: usize, op: *mut u8) -> bool {
     let f0 = _mm256_set1_epi8(0xF0u8 as i8);
     let weights = _mm256_set1_epi16(0x0110);
 
