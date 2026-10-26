@@ -319,9 +319,8 @@ fn decode_simd_boundaries() {
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
         for pos in 0..hex.len() {
-            let mut invalid = hex.clone().into_bytes();
-            invalid[pos] = b'g';
-            let invalid = String::from_utf8(invalid).unwrap();
+            let mut invalid = hex.clone();
+            invalid.replace_range(pos..=pos, "g");
             assert_eq!(
                 const_hex::decode_to_slice(&invalid, &mut output),
                 Err(const_hex::FromHexError::InvalidHexCharacter { c: 'g', index: pos }),

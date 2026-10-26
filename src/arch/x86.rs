@@ -192,13 +192,7 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
-    generic::check_unaligned_chunks(input, |c| check_chunk_sse2(c))
-}
-
-#[inline]
-#[target_feature(enable = "sse2")]
-unsafe fn check_chunk_sse2(chunk: __m128i) -> bool {
-    _mm_movemask_epi8(valid_sse2(chunk)) == 0xffff
+    generic::check_unaligned_chunks(input, |c| _mm_movemask_epi8(valid_sse2(c)) == 0xffff)
 }
 
 /// Per-byte validity mask: `0xFF` for hex digits, `0x00` otherwise.
@@ -346,22 +340,6 @@ unsafe fn nibbles_avx2(v: __m256i) -> __m256i {
     _mm256_min_epu8(d, a)
 }
 
-/// [`nibbles_avx2`] for 16 bytes.
-#[inline]
-#[target_feature(enable = "sse2")]
-unsafe fn nibbles_sse2(v: __m128i) -> __m128i {
-    let add_c6 = _mm_set1_epi8(0xC6u8 as i8);
-    let six = _mm_set1_epi8(6);
-    let f0 = _mm_set1_epi8(0xF0u8 as i8);
-    let df = _mm_set1_epi8(0xDFu8 as i8);
-    let big_a = _mm_set1_epi8(b'A' as i8);
-    let ten = _mm_set1_epi8(10);
-
-    let d = _mm_sub_epi8(_mm_subs_epu8(_mm_add_epi8(v, add_c6), six), f0);
-    let a = _mm_adds_epu8(_mm_sub_epi8(_mm_and_si128(v, df), big_a), ten);
-    _mm_min_epu8(d, a)
-}
-
 /// Decodes 64 hex characters to 32 bytes. Returns `false` if any is invalid.
 #[inline]
 #[target_feature(enable = "avx2")]
@@ -406,9 +384,10 @@ unsafe fn decode_32(ip: *const u8, op: *mut u8) -> bool {
 
 /// Decodes 16 hex characters to 8 bytes. Returns `false` if any is invalid.
 #[inline]
-#[target_feature(enable = "sse4.1")]
+#[target_feature(enable = "avx2")]
 unsafe fn decode_16(ip: *const u8, op: *mut u8) -> bool {
-    let n = nibbles_sse2(_mm_loadu_si128(ip.cast()));
+    let v = _mm256_castsi128_si256(_mm_loadu_si128(ip.cast()));
+    let n = _mm256_castsi256_si128(nibbles_avx2(v));
     if _mm_testz_si128(n, _mm_set1_epi8(0xF0u8 as i8)) == 0 {
         return false;
     }
@@ -419,9 +398,10 @@ unsafe fn decode_16(ip: *const u8, op: *mut u8) -> bool {
 
 /// Decodes 8 hex characters to 4 bytes. Returns `false` if any is invalid.
 #[inline]
-#[target_feature(enable = "sse4.1")]
+#[target_feature(enable = "avx2")]
 unsafe fn decode_8(ip: *const u8, op: *mut u8) -> bool {
-    let n = nibbles_sse2(_mm_loadl_epi64(ip.cast()));
+    let v = _mm256_castsi128_si256(_mm_loadl_epi64(ip.cast()));
+    let n = _mm256_castsi256_si128(nibbles_avx2(v));
     // Only the low 8 bytes hold input; the zeroed upper half is not valid hex.
     let f0 = _mm_set_epi64x(0, 0xF0F0F0F0F0F0F0F0_u64 as i64);
     if _mm_testz_si128(n, f0) == 0 {
