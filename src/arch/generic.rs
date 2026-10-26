@@ -13,34 +13,30 @@ pub(crate) const USE_CHECK_FN: bool = false;
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
 pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
-    let table = if UPPER { &ENCODE_UPPER } else { &ENCODE_LOWER };
-    while let &[a, b, c, d, ref rest @ ..] = input {
-        let chunk = table[a as usize] as u64
-            | (table[b as usize] as u64) << 16
-            | (table[c as usize] as u64) << 32
-            | (table[d as usize] as u64) << 48;
-        output.write(&chunk.to_le_bytes());
-        input = rest;
+    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
+        const ONES: u64 = 0x0101_0101_0101_0101;
+
+        // Encodes 4 bytes into 8 hex digits in memory order.
+        let swar = |bytes: [u8; 4]| {
+            // Spread the 4 bytes to every other byte, then split each into its high and low nibble.
+            let x = u32::from_le_bytes(bytes) as u64;
+            let x = (x | (x << 16)) & 0x0000_FFFF_0000_FFFF;
+            let x = (x | (x << 8)) & 0x00FF_00FF_00FF_00FF;
+            let n = ((x >> 4) & 0x000F_000F_000F_000F) | ((x & 0x000F_000F_000F_000F) << 8);
+            // Nibbles 10..=15 get the extra offset from '9' + 1 to 'a' (or 'A').
+            let gt9 = ((n + ONES * 6) >> 4) & ONES;
+            (n + ONES * b'0' as u64 + gt9 * if UPPER { 7 } else { 39 }).to_le_bytes()
+        };
+        while let &[a, b, c, d, ref rest @ ..] = input {
+            output.write(&swar([a, b, c, d]));
+            input = rest;
+        }
     }
     for &byte in input {
-        output.write(&table[byte as usize].to_le_bytes());
+        let (high, low) = byte2hex::<UPPER>(byte);
+        output.write_byte(high);
+        output.write_byte(low);
     }
-}
-
-/// Maps each byte to its two hex digits, high digit first in memory order.
-static ENCODE_LOWER: [u16; 256] = make_encode_table::<false>();
-/// Maps each byte to its two hex digits, high digit first in memory order.
-static ENCODE_UPPER: [u16; 256] = make_encode_table::<true>();
-
-const fn make_encode_table<const UPPER: bool>() -> [u16; 256] {
-    let mut table = [0; 256];
-    let mut i = 0;
-    while i < 256 {
-        let (high, low) = byte2hex::<UPPER>(i as u8);
-        table[i] = u16::from_le_bytes([high, low]);
-        i += 1;
-    }
-    table
 }
 
 /// Encodes unaligned chunks of `T` in `input` to `output` using `encode_chunk`.
