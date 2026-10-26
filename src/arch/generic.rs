@@ -12,7 +12,13 @@ pub(crate) const USE_CHECK_FN: bool = false;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
-#[allow(dead_code)]
+#[cfg(any(
+    feature = "force-generic",
+    not(any(
+        feature = "portable-simd",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    ))
+))]
 pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
     // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
     // per-byte loop.
