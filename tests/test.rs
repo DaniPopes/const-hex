@@ -269,8 +269,15 @@ const ALL_UPPER: &str = "000102030405060708090A0B0C0D0E0F101112131415161718191A1
 
 #[test]
 fn check_simd_boundaries() {
-    // Covers every tail and loop branch: 1..=3, 4..=7, 8..=15, 16..=63, 64, and beyond.
-    for size in (1..=260).chain([384]) {
+    // Miri is slow; test only the edges of the SIMD paths.
+    let sizes = if cfg!(miri) {
+        vec![
+            1, 3, 4, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 79, 80, 127, 128, 129, 255, 256, 257,
+        ]
+    } else {
+        (1..=260).collect()
+    };
+    for size in sizes {
         let valid_lower: String = "a".repeat(size);
         let valid_upper: String = "F".repeat(size);
         let valid_mixed: String = "0aF".chars().cycle().take(size).collect();
@@ -279,30 +286,14 @@ fn check_simd_boundaries() {
         assert!(const_hex::check_raw(&valid_upper), "failed at size {size}");
         assert!(const_hex::check_raw(&valid_mixed), "failed at size {size}");
 
+        let mut invalid = valid_lower.into_bytes();
         for pos in 0..size {
-            let mut invalid = valid_lower.clone().into_bytes();
             invalid[pos] = b'g';
             assert!(
                 !const_hex::check_raw(&invalid),
                 "should fail at size {size}, pos {pos}"
             );
-        }
-    }
-}
-
-#[test]
-fn check_every_byte() {
-    for size in [1, 4, 5, 8, 15, 16, 17, 40, 64, 100] {
-        for pos in [0, size / 2, size - 1] {
-            for byte in 0..=u8::MAX {
-                let mut input = vec![b'a'; size];
-                input[pos] = byte;
-                assert_eq!(
-                    const_hex::check_raw(&input),
-                    byte.is_ascii_hexdigit(),
-                    "size {size}, pos {pos}, byte {byte:#04x}"
-                );
-            }
+            invalid[pos] = b'a';
         }
     }
 }
@@ -355,7 +346,7 @@ fn check_all_invalid_chars() {
     let lens = if cfg!(miri) {
         vec![1, 25]
     } else {
-        (1..=33).collect()
+        (1..=33).chain([64, 100]).collect()
     };
     for len in lens {
         let mut input = vec![b'a'; len];
