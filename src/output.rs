@@ -164,7 +164,7 @@ pub(crate) struct FormatterOutput<'a, 'b> {
 
 impl<'a, 'b> FormatterOutput<'a, 'b> {
     #[inline]
-    pub(crate) fn new(f: &'a mut fmt::Formatter<'b>) -> Self {
+    pub(crate) const fn new(f: &'a mut fmt::Formatter<'b>) -> Self {
         Self { f, result: Ok(()) }
     }
 
@@ -244,13 +244,15 @@ mod tests {
     #[test]
     #[cfg(all(feature = "std", panic = "unwind"))]
     fn buffered_output_does_not_double_panic() {
-        assert!(std::panic::catch_unwind(|| {
-            let mut bytes = [0; 4];
-            let mut output = BufferedOutput::<_, 4>::new(bytes.as_mut_slice());
-            output.write_byte(b'a');
-            panic!("original panic");
-        })
-        .is_err());
+        assert!(
+            std::panic::catch_unwind(|| {
+                let mut bytes = [0; 4];
+                let mut output = BufferedOutput::<_, 4>::new(bytes.as_mut_slice());
+                output.write_byte(b'a');
+                panic!("original panic");
+            })
+            .is_err()
+        );
     }
 
     #[test]
