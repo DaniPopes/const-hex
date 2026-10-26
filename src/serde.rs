@@ -17,8 +17,8 @@
 use crate::FromHex;
 use core::fmt;
 use core::marker::PhantomData;
-use serde_core::de::{Error, Visitor};
 use serde_core::Deserializer;
+use serde_core::de::{Error, Visitor};
 
 /// Serializes `data` as hex string using lowercase characters with a `0x` prefix.
 ///

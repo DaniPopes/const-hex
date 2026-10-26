@@ -27,18 +27,13 @@ jobs:
             feature: avx2
           - triple: wasm32-wasip1
             feature: simd128
-        rust: [nightly, stable, 1.64]
+        rust: [nightly, stable, 1.85]
         exclude:
           # https://github.com/rust-lang/rust/issues/131031
           - target:
               triple: wasm32-wasip1
               feature: simd128
             rust: nightly
-          # In 1.64 it's still called wasm32-wasi
-          - target:
-              triple: wasm32-wasip1
-              feature: simd128
-            rust: 1.64
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -64,31 +59,31 @@ jobs:
       - run: cargo build --features serde
       - run: cargo build --no-default-features --features serde
       - run: cargo test --features serde
-        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features serde
-        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features serde,force-generic
-        if: matrix.rust != '1.64'
       - run: cargo test --no-default-features --features serde,nightly,portable-simd
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
-        if: matrix.rust != '1.64'
 
+      # `-Ctarget-feature=-neon` is a hard error on aarch64 since it changes the ABI.
       - name: Disable target feature
         run: echo RUSTFLAGS=${RUSTFLAGS_BAK}\ -Ctarget-feature=-${{ matrix.target.feature }} >> $GITHUB_ENV
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu'
 
       - run: cargo build --features serde
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu'
       - run: cargo build --no-default-features --features serde
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu'
       - run: cargo test --features serde
-        if: matrix.rust != '1.64'
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu'
       - run: cargo test --no-default-features --features serde
-        if: matrix.rust != '1.64'
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu'
       - run: cargo test --no-default-features --features serde,force-generic
-        if: matrix.rust != '1.64'
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu'
       - run: cargo test --no-default-features --features serde,nightly,portable-simd
-        if: matrix.rust == 'nightly'
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu' && matrix.rust == 'nightly'
       - run: cargo bench --no-run
-        if: matrix.rust != '1.64'
+        if: matrix.target.triple != 'aarch64-unknown-linux-gnu'
 
   miri:
     name: Miri
