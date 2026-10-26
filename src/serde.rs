@@ -69,7 +69,7 @@ where
             buf[1].write(b'x');
         }
         // SAFETY: `buf[prefix_len..len]` is exactly `data.len() * 2` bytes long.
-        unsafe { crate::imp::encode::<UPPER>(data, &mut buf[prefix_len..len]) };
+        unsafe { crate::encode_uninit::<UPPER>(data, &mut buf[prefix_len..len]) };
         // SAFETY: `buf[..len]` has been fully initialized above, and only ASCII
         // characters, which are valid UTF-8, have been written.
         let s = unsafe {
