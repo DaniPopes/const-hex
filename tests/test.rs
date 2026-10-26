@@ -382,9 +382,8 @@ fn encode_to_slice_simd_boundaries() {
     }
 }
 
-/// `Buffer::format` and `display` write through `&mut [u8]` and `&mut [MaybeUninit<u8>]`.
+/// `Buffer::format` and `display` encode into uninitialized buffers.
 #[test]
-#[cfg(feature = "alloc")]
 fn encode_simd_boundaries_buffer_display() {
     fn buffer<const N: usize>() {
         for input in boundary_inputs().filter(|input| input.len() == N) {
@@ -396,13 +395,21 @@ fn encode_simd_boundaries_buffer_display() {
                 hex::encode_upper(input),
                 "size {N}"
             );
+
+            // The prefix offsets the encoded output by two bytes.
+            let mut buffer = Buffer::<N, true>::new();
+            assert_eq!(
+                &*buffer.format(&input),
+                format!("0x{}", hex::encode(input)),
+                "size {N}, prefixed"
+            );
         }
     }
 
     macro_rules! buffers {
         ($($n:literal)*) => { $(buffer::<$n>();)* };
     }
-    buffers!(0 1 2 3 4 5 7 8 9 15 16 17 24 31 32 33 63 64 65 129);
+    buffers!(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 100 127 128 129 255 256);
 
     for input in boundary_inputs() {
         let size = input.len();
