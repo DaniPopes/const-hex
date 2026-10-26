@@ -52,23 +52,58 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) fn check(input: &[u8]) -> bool {
-    generic::check_unaligned_chunks(input, |chunk: v128| {
-        let ge0 = u8x16_ge(chunk, u8x16_splat(b'0'));
-        let le9 = u8x16_le(chunk, u8x16_splat(b'9'));
-        let valid_digit = v128_and(ge0, le9);
+    let ptr = input.as_ptr();
+    let len = input.len();
 
-        let geua = u8x16_ge(chunk, u8x16_splat(b'A'));
-        let leuf = u8x16_le(chunk, u8x16_splat(b'F'));
-        let valid_upper = v128_and(geua, leuf);
+    // SAFETY: All loads are in bounds: they start at `0..=len - 16`, or read 8 or 4 bytes at
+    // `0` and `len - 8` or `len - 4` when `len >= 8` or `len >= 4`.
+    unsafe {
+        if len >= 16 {
+            let mut i = 0;
+            while i + 64 <= len {
+                let p = ptr.add(i).cast::<v128>();
+                let bad = v128_or(
+                    v128_or(invalid(v128_load(p)), invalid(v128_load(p.add(1)))),
+                    v128_or(invalid(v128_load(p.add(2))), invalid(v128_load(p.add(3)))),
+                );
+                if v128_any_true(bad) {
+                    return false;
+                }
+                i += 64;
+            }
+            while i + 16 <= len {
+                if v128_any_true(invalid(v128_load(ptr.add(i).cast()))) {
+                    return false;
+                }
+                i += 16;
+            }
+            // Overlap the last chunk with the previous one instead of a scalar remainder.
+            return i == len || !v128_any_true(invalid(v128_load(ptr.add(len - 16).cast())));
+        }
 
-        let gela = u8x16_ge(chunk, u8x16_splat(b'a'));
-        let lelf = u8x16_le(chunk, u8x16_splat(b'f'));
-        let valid_lower = v128_and(gela, lelf);
+        let chunk = if len >= 8 {
+            v128_load64_lane::<1>(v128_load64_zero(ptr.cast()), ptr.add(len - 8).cast())
+        } else if len >= 4 {
+            // The unused lanes stay valid.
+            let chunk = v128_load32_lane::<0>(u8x16_splat(b'0'), ptr.cast());
+            v128_load32_lane::<1>(chunk, ptr.add(len - 4).cast())
+        } else {
+            return generic::check(input);
+        };
+        !v128_any_true(invalid(chunk))
+    }
+}
 
-        let valid_letter = v128_or(valid_lower, valid_upper);
-        let valid = v128_or(valid_digit, valid_letter);
-        u8x16_all_true(valid)
-    })
+/// Returns a vector that is zero exactly in the lanes where `chunk` holds an ASCII hex digit.
+///
+/// A byte is valid iff `x - b'0' <= 9` or `(x | 0x20) - b'a' <= 5` (wrapping), so the minimum of
+/// the two saturating excesses is zero exactly for valid bytes.
+#[inline(always)]
+fn invalid(chunk: v128) -> v128 {
+    let digit = u8x16_sub_sat(u8x16_sub(chunk, u8x16_splat(b'0')), u8x16_splat(9));
+    let lower = u8x16_sub(v128_or(chunk, u8x16_splat(0x20)), u8x16_splat(b'a'));
+    let letter = u8x16_sub_sat(lower, u8x16_splat(5));
+    u8x16_min(digit, letter)
 }
 
 /// Single-pass hex decode with validation using Muła & Langdale's Algorithm #3.
