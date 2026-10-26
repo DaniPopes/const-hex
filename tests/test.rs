@@ -293,16 +293,36 @@ fn check_simd_boundaries() {
     }
 }
 
+/// Every length up to 65 bytes, then lengths around the following 16-byte boundaries.
+fn encode_lengths() -> impl Iterator<Item = usize> {
+    (0..=65).chain([100, 127, 128, 129, 255, 256])
+}
+
+fn encode_input(size: usize) -> Vec<u8> {
+    (0..size).map(|i| (i * 7 + 0x9d) as u8).collect()
+}
+
+fn encode_expected(input: &[u8], upper: bool) -> String {
+    if upper {
+        hex::encode_upper(input)
+    } else {
+        hex::encode(input)
+    }
+}
+
 #[test]
 #[cfg(feature = "alloc")]
 fn encode_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
-        let input: Vec<u8> = (0..size).map(|i| i as u8).collect();
-        let encoded = const_hex::encode(&input);
-        assert_eq!(encoded.len(), size * 2, "encode failed at size {size}");
-
-        let expected: String = input.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(encoded, expected, "encode mismatch at size {size}");
+    for size in encode_lengths() {
+        let input = encode_input(size);
+        for upper in [false, true] {
+            let encoded = if upper {
+                const_hex::encode_upper(&input)
+            } else {
+                const_hex::encode(&input)
+            };
+            assert_eq!(encoded, encode_expected(&input, upper), "size {size}");
+        }
     }
 }
 
@@ -324,14 +344,69 @@ fn decode_simd_boundaries() {
 
 #[test]
 fn encode_to_slice_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
-        let input: Vec<u8> = (0..size).map(|i| i as u8).collect();
-        let mut output = vec![0u8; size * 2];
+    for size in encode_lengths() {
+        let input = encode_input(size);
+        for upper in [false, true] {
+            // Surround the output with guard bytes to detect writes out of bounds.
+            let mut output = vec![0xAA; size * 2 + 32];
+            let out = &mut output[16..16 + size * 2];
+            if upper {
+                const_hex::encode_to_slice_upper(&input, out).unwrap();
+            } else {
+                const_hex::encode_to_slice(&input, out).unwrap();
+            }
 
-        const_hex::encode_to_slice(&input, &mut output).unwrap();
+            let expected = encode_expected(&input, upper);
+            assert_eq!(
+                &output[16..16 + size * 2],
+                expected.as_bytes(),
+                "size {size}"
+            );
+            assert!(output[..16].iter().all(|&b| b == 0xAA), "size {size}");
+            assert!(
+                output[16 + size * 2..].iter().all(|&b| b == 0xAA),
+                "size {size}"
+            );
+        }
+    }
+}
 
-        let expected: String = input.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(output, expected.as_bytes(), "mismatch at size {size}");
+/// `Buffer::format` and `display` write through `&mut [u8]` and `&mut [MaybeUninit<u8>]`.
+#[test]
+#[cfg(feature = "alloc")]
+fn encode_simd_boundaries_buffer_display() {
+    fn buffer<const N: usize>() {
+        let input: [u8; N] = encode_input(N).try_into().unwrap();
+        let mut buffer = Buffer::<N, false>::new();
+        assert_eq!(
+            &*buffer.format(&input),
+            encode_expected(&input, false),
+            "size {N}"
+        );
+        assert_eq!(
+            &*buffer.format_upper(&input),
+            encode_expected(&input, true),
+            "size {N}"
+        );
+    }
+
+    macro_rules! buffers {
+        ($($n:literal)*) => { $(buffer::<$n>();)* };
+    }
+    buffers!(0 1 2 3 4 5 7 8 9 15 16 17 24 31 32 33 63 64 65 129);
+
+    for size in encode_lengths() {
+        let input = encode_input(size);
+        assert_eq!(
+            format!("{}", const_hex::display(&input)),
+            encode_expected(&input, false),
+            "size {size}"
+        );
+        assert_eq!(
+            format!("{:#X}", const_hex::display(&input)),
+            format!("0x{}", encode_expected(&input, true)),
+            "size {size}"
+        );
     }
 }
 

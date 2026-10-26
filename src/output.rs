@@ -13,6 +13,13 @@ pub(crate) trait Output {
     fn remaining(&self) -> Option<usize> {
         None
     }
+
+    /// Returns a pointer to the start of the remaining output.
+    ///
+    /// Writes through the pointer must stay within the remaining length, and the output must not
+    /// be used again while the pointer is in use.
+    #[allow(dead_code)]
+    fn as_mut_ptr(&mut self) -> *mut u8;
 }
 
 impl Output for &mut [u8] {
@@ -29,6 +36,11 @@ impl Output for &mut [u8] {
     fn remaining(&self) -> Option<usize> {
         Some(self.len())
     }
+
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        <[u8]>::as_mut_ptr(self)
+    }
 }
 
 impl Output for &mut [MaybeUninit<u8>] {
@@ -43,6 +55,11 @@ impl Output for &mut [MaybeUninit<u8>] {
     #[inline]
     fn remaining(&self) -> Option<usize> {
         Some(self.len())
+    }
+
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        <[MaybeUninit<u8>]>::as_mut_ptr(self).cast()
     }
 }
 

@@ -7,13 +7,16 @@ use core::mem::MaybeUninit;
 
 pub(crate) const USE_CHECK_FN: bool = false;
 
+/// # Safety
+///
+/// `output` must be at least `2 * input.len()` bytes long.
 #[inline]
 #[target_feature(enable = "simd128")]
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
+pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Output) {
     // Load table.
     let hex_table = v128_load(get_chars_table::<UPPER>().as_ptr().cast());
 
-    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: v128| {
+    let encode_chunk = |chunk: v128| {
         // Load input bytes and mask to nibbles.
         let mut lo = v128_and(chunk, u8x16_splat(0x0F));
         let mut hi = u8x16_shr(chunk, 4);
@@ -45,8 +48,48 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
             14, 30,
             15, 31,
         >(hi, lo);
-        [hex_lo, hex_hi]
-    });
+        (hex_lo, hex_hi)
+    };
+
+    let len = input.len();
+    debug_assert!(
+        output
+            .remaining()
+            .is_none_or(|remaining| remaining >= 2 * len)
+    );
+
+    let src = input.as_ptr();
+    let dst = output.as_mut_ptr();
+
+    // Inputs of 4 or more bytes end with stores that overlap earlier ones, instead of a scalar
+    // remainder. At 8 or more bytes, the last chunk ends at `len`, sharing one chunk encode
+    // between the 8-to-15-byte and the 16-or-more-byte tails to keep `encode` small enough for
+    // LLVM to inline into constant-length callers.
+    if len >= 8 {
+        let mut i = 0;
+        while i + 16 < len {
+            let (hex_lo, hex_hi) = encode_chunk(v128_load(src.add(i).cast()));
+            v128_store(dst.add(2 * i).cast(), hex_lo);
+            v128_store(dst.add(2 * i + 16).cast(), hex_hi);
+            i += 16;
+        }
+        let chunk = if len >= 16 {
+            v128_load(src.add(len - 16).cast())
+        } else {
+            v128_load64_lane::<1>(v128_load64_zero(src.cast()), src.add(len - 8).cast())
+        };
+        let (hex_lo, hex_hi) = encode_chunk(chunk);
+        // For 8 to 15 bytes, `hex_lo` starts the output.
+        v128_store(dst.add((2 * len).saturating_sub(32)).cast(), hex_lo);
+        v128_store(dst.add(2 * len - 16).cast(), hex_hi);
+    } else if len >= 4 {
+        let chunk = v128_load32_lane::<1>(v128_load32_zero(src.cast()), src.add(len - 4).cast());
+        let (hex_lo, _) = encode_chunk(chunk);
+        v128_store64_lane::<0>(hex_lo, dst.cast());
+        v128_store64_lane::<1>(hex_lo, dst.add(2 * len - 8).cast());
+    } else {
+        generic::encode::<UPPER>(input, output);
+    }
 }
 
 #[inline]
