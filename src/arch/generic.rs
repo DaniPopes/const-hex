@@ -1,5 +1,5 @@
-use crate::{byte2hex, Output, HEX_DECODE_LUT, NIL};
-use core::mem::{size_of, MaybeUninit};
+use crate::{HEX_DECODE_LUT, NIL, Output, byte2hex};
+use core::mem::{MaybeUninit, size_of};
 
 /// Set to `true` to use `check` + `decode_unchecked` for decoding. Otherwise uses `decode_checked`.
 ///
