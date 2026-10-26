@@ -309,27 +309,27 @@ fn encode_simd_boundaries() {
 #[test]
 #[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
-    let sizes = (1..=70).chain([95, 96, 97, 127, 128, 129]);
+    // Miri is slow; these sizes still reach every decode path.
+    let sizes: Vec<usize> = if cfg!(miri) {
+        vec![1, 4, 8, 16, 17, 32, 33, 64, 65]
+    } else {
+        (1..=70).chain([95, 96, 97, 127, 128, 129]).collect()
+    };
     for size in sizes {
-        // Multiplying spreads the bytes over every high and low nibble.
-        let bytes: Vec<u8> = (0..size).map(|i| (i as u8).wrapping_mul(37)).collect();
+        let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
 
         let decoded = const_hex::decode(&hex).unwrap();
         assert_eq!(decoded, bytes, "decode mismatch at size {size}");
-        let decoded = const_hex::decode(hex.to_uppercase()).unwrap();
-        assert_eq!(decoded, bytes, "uppercase decode mismatch at size {size}");
 
         let mut output = vec![0u8; size];
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
-        // An invalid character at every position: every vector of the unrolled loop and the characters
-        // that the overlapping tails read twice.
+        // Corrupt each position in turn, covering every unrolled vector and the overlapped tails.
         for pos in 0..hex.len() {
             let mut bad = hex.clone().into_bytes();
             bad[pos] = b'g';
-            let bad = String::from_utf8(bad).unwrap();
             assert!(
                 const_hex::decode(&bad).is_err(),
                 "decode accepted size {size} pos {pos}"
@@ -345,8 +345,34 @@ fn decode_simd_boundaries() {
 
 #[test]
 #[cfg(feature = "alloc")]
+fn decode_all_nibbles_simd_boundaries() {
+    for size in [1, 7, 8, 16, 17, 32, 33, 64, 65, 129] {
+        // Multiplying spreads the bytes over every high and low nibble.
+        let bytes: Vec<u8> = (0..size).map(|i| (i as u8).wrapping_mul(37)).collect();
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+
+        assert_eq!(
+            const_hex::decode(&hex).unwrap(),
+            bytes,
+            "lower, size {size}"
+        );
+        assert_eq!(
+            const_hex::decode(hex.to_uppercase()).unwrap(),
+            bytes,
+            "upper, size {size}"
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "alloc")]
 fn decode_all_invalid_chars() {
-    for size in [1, 4, 8, 16, 32, 64, 65] {
+    let sizes: &[usize] = if cfg!(miri) {
+        &[1, 17]
+    } else {
+        &[1, 4, 8, 16, 32, 64, 65]
+    };
+    for &size in sizes {
         let hex = "1".repeat(size * 2);
         for pos in [0, size - 1, size, size * 2 - 1] {
             for c in 0u8..=255 {

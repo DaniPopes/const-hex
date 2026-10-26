@@ -152,7 +152,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
             v128_store(o.add(i / 2 + 16).cast(), merge(n2, n3));
             i += 64;
         }
-        while i + 32 <= n {
+        if i + 32 <= n {
             let q = p.add(i).cast::<v128>();
             let Some(x) = decode32(v128_load(q), v128_load(q.add(1))) else {
                 return false;
