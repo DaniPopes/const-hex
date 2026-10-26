@@ -27,7 +27,8 @@ impl core::error::Error for FromHexError {}
 impl std::error::Error for FromHexError {}
 
 impl fmt::Display for FromHexError {
-    #[inline]
+    // Cold; not `#[inline]` so downstream crates call one copy compiled here.
+    #[allow(clippy::missing_inline_in_public_items)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::InvalidHexCharacter { c, index } => {
