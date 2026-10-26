@@ -92,30 +92,41 @@ unsafe fn nibbles(v: v128) -> v128 {
     u8x16_min(d, a)
 }
 
+/// Merges 32 nibbles into 16 bytes by deinterleaving and combining each pair.
+#[inline]
+#[target_feature(enable = "simd128")]
+unsafe fn merge(n0: v128, n1: v128) -> v128 {
+    #[rustfmt::skip]
+    let hi = u8x16_shuffle::<0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30>(n0, n1);
+    #[rustfmt::skip]
+    let lo = u8x16_shuffle::<1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31>(n0, n1);
+    // The nibbles are at most 15, so the 16-bit shift cannot carry into the next byte.
+    v128_or(i16x8_shl(hi, 4), lo)
+}
+
+/// Returns whether any nibble is above 15, which sets a bit in `0xF0`.
+#[inline]
+#[target_feature(enable = "simd128")]
+unsafe fn any_invalid(n: v128) -> bool {
+    v128_any_true(v128_and(n, u8x16_splat(0xF0)))
+}
+
 /// Decodes 32 hex characters into 16 bytes, or returns `None` if any character is invalid.
 #[inline]
 #[target_feature(enable = "simd128")]
 unsafe fn decode32(v0: v128, v1: v128) -> Option<v128> {
     let n0 = nibbles(v0);
     let n1 = nibbles(v1);
-
-    // A nibble above 15 has a bit set in 0xF0.
-    if v128_any_true(v128_and(v128_or(n0, n1), u8x16_splat(0xF0))) {
+    if any_invalid(v128_or(n0, n1)) {
         return None;
     }
-
-    // Deinterleave and merge nibble pairs. The nibbles are at most 15, so the 16-bit shift
-    // cannot carry into the next byte.
-    #[rustfmt::skip]
-    let hi = u8x16_shuffle::<0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30>(n0, n1);
-    #[rustfmt::skip]
-    let lo = u8x16_shuffle::<1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31>(n0, n1);
-    Some(v128_or(i16x8_shl(hi, 4), lo))
+    Some(merge(n0, n1))
 }
 
 /// Single-pass hex decode with validation.
 ///
-/// Inputs of 8 or more characters use overlapping loads and stores, so no scalar tail is needed.
+/// The main loop decodes 64 characters per iteration. Inputs of 8 or more characters use
+/// overlapping loads and stores, so no scalar tail is needed.
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
@@ -128,6 +139,19 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
 
     if n >= 32 {
         let mut i = 0;
+        while i + 64 <= n {
+            let q = p.add(i).cast::<v128>();
+            let n0 = nibbles(v128_load(q));
+            let n1 = nibbles(v128_load(q.add(1)));
+            let n2 = nibbles(v128_load(q.add(2)));
+            let n3 = nibbles(v128_load(q.add(3)));
+            if any_invalid(v128_or(v128_or(n0, n1), v128_or(n2, n3))) {
+                return false;
+            }
+            v128_store(o.add(i / 2).cast(), merge(n0, n1));
+            v128_store(o.add(i / 2 + 16).cast(), merge(n2, n3));
+            i += 64;
+        }
         while i + 32 <= n {
             let q = p.add(i).cast::<v128>();
             let Some(x) = decode32(v128_load(q), v128_load(q.add(1))) else {

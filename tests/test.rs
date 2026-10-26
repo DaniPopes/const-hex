@@ -321,7 +321,8 @@ fn decode_simd_boundaries() {
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
-        // An invalid character at every position, including those that overlapping tails read twice.
+        // An invalid character at every position: every vector of the unrolled loop and the characters
+        // that the overlapping tails read twice.
         for pos in 0..hex.len() {
             let mut bad = hex.clone().into_bytes();
             bad[pos] = b'g';
