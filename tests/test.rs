@@ -306,8 +306,8 @@ fn check_simd_boundaries() {
 
 /// Inputs around every SIMD tail and chunk boundary.
 fn boundary_inputs() -> impl Iterator<Item = Vec<u8>> {
-    (0..=40usize)
-        .chain([63, 64, 65, 127, 128, 129])
+    (0..=65usize)
+        .chain([100, 127, 128, 129, 255, 256])
         .map(|size| {
             (0..size)
                 .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
@@ -353,22 +353,26 @@ fn encode_to_slice_simd_boundaries() {
     for input in boundary_inputs() {
         let size = input.len();
         for upper in [false, true] {
-            // The trailing guard bytes must stay untouched.
+            // The guard bytes before and after the output must stay untouched.
             let mut output = vec![0xAA; size * 2 + 32];
             let expected: String = if upper {
-                const_hex::encode_to_slice_upper(&input, &mut output[..size * 2]).unwrap();
+                const_hex::encode_to_slice_upper(&input, &mut output[16..16 + size * 2]).unwrap();
                 input.iter().map(|b| format!("{b:02X}")).collect()
             } else {
-                const_hex::encode_to_slice(&input, &mut output[..size * 2]).unwrap();
+                const_hex::encode_to_slice(&input, &mut output[16..16 + size * 2]).unwrap();
                 input.iter().map(|b| format!("{b:02x}")).collect()
             };
             assert_eq!(
-                &output[..size * 2],
+                &output[16..16 + size * 2],
                 expected.as_bytes(),
                 "mismatch at size {size}, upper: {upper}"
             );
             assert!(
-                output[size * 2..].iter().all(|&b| b == 0xAA),
+                output[..16].iter().all(|&b| b == 0xAA),
+                "underrun at size {size}, upper: {upper}"
+            );
+            assert!(
+                output[16 + size * 2..].iter().all(|&b| b == 0xAA),
                 "overrun at size {size}, upper: {upper}"
             );
         }
