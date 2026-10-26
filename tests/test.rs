@@ -344,6 +344,26 @@ fn decode_simd_boundaries() {
 }
 
 #[test]
+#[cfg(feature = "alloc")]
+fn decode_all_invalid_chars() {
+    for size in [1, 4, 8, 16, 32, 64, 65] {
+        let hex = "1".repeat(size * 2);
+        for pos in [0, size - 1, size, size * 2 - 1] {
+            for c in 0u8..=255 {
+                let mut input = hex.clone().into_bytes();
+                input[pos] = c;
+                let is_valid = c.is_ascii_hexdigit();
+                assert_eq!(
+                    const_hex::decode(&input).is_ok(),
+                    is_valid,
+                    "size {size} pos {pos} char 0x{c:02x}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn encode_to_slice_simd_boundaries() {
     for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
         let input: Vec<u8> = (0..size).map(|i| i as u8).collect();
