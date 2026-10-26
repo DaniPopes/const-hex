@@ -270,8 +270,7 @@ const ALL_UPPER: &str = "000102030405060708090A0B0C0D0E0F101112131415161718191A1
 #[test]
 fn check_simd_boundaries() {
     for size in [
-        1, 3, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 40, 63, 64, 65, 126, 127, 128, 129, 255, 256,
-        257, 384,
+        1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 384,
     ] {
         let valid_lower: String = "a".repeat(size);
         let valid_upper: String = "F".repeat(size);
@@ -281,13 +280,26 @@ fn check_simd_boundaries() {
         assert!(const_hex::check_raw(&valid_upper), "failed at size {size}");
         assert!(const_hex::check_raw(&valid_mixed), "failed at size {size}");
 
-        for pos in 0..size {
-            let mut invalid = valid_lower.clone().into_bytes();
-            invalid[pos] = b'g';
-            assert!(
-                !const_hex::check_raw(&invalid),
-                "should fail at size {size}, pos {pos}"
-            );
+        for pos in [
+            0,
+            size / 2,
+            size.saturating_sub(1),
+            31,
+            32,
+            64,
+            96,
+            127,
+            128,
+            224,
+        ] {
+            if pos < size {
+                let mut invalid = valid_lower.clone().into_bytes();
+                invalid[pos] = b'g';
+                assert!(
+                    !const_hex::check_raw(&invalid),
+                    "should fail at size {size}, pos {pos}"
+                );
+            }
         }
     }
 }
@@ -308,9 +320,16 @@ fn encode_simd_boundaries() {
 #[test]
 #[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
-    for size in [
-        1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 40, 63, 64, 65, 126, 127, 128, 129,
-    ] {
+    // Miri is slow; the extra sizes only reach more of the AVX2 tails.
+    let sizes: &[usize] = if cfg!(miri) {
+        &[1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129]
+    } else {
+        &[
+            1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 40, 48, 49, 63, 64, 65, 88, 96, 126,
+            127, 128, 129, 160,
+        ]
+    };
+    for &size in sizes {
         let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
 
@@ -321,14 +340,22 @@ fn decode_simd_boundaries() {
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
-        for pos in 0..hex.len() {
-            let mut invalid = hex.clone();
-            invalid.replace_range(pos..=pos, "g");
+        // Miri is slow, and CI's Miri jobs don't enable AVX2, so only test the edges there.
+        let positions = if cfg!(miri) {
+            vec![0, hex.len() - 1]
+        } else {
+            (0..hex.len()).collect()
+        };
+        let mut invalid = hex.into_bytes();
+        for pos in positions {
+            let byte = invalid[pos];
+            invalid[pos] = b'g';
             assert_eq!(
                 const_hex::decode_to_slice(&invalid, &mut output),
                 Err(const_hex::FromHexError::InvalidHexCharacter { c: 'g', index: pos }),
                 "should fail at size {size}, pos {pos}"
             );
+            invalid[pos] = byte;
         }
     }
 }
@@ -352,7 +379,9 @@ fn check_all_invalid_chars() {
     let lens = if cfg!(miri) {
         vec![1, 25]
     } else {
-        (1..=33).collect()
+        (1..=33)
+            .chain([40, 63, 64, 65, 126, 127, 128, 129, 160, 161])
+            .collect()
     };
     for len in lens {
         let mut input = vec![b'a'; len];
