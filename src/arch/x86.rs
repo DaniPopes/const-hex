@@ -134,56 +134,41 @@ pub(crate) fn check(input: &[u8]) -> bool {
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn check_avx2(input: &[u8]) -> bool {
-    let tail = if input.len() >= 128 {
-        let Some(tail) = check_avx2_128(input) else {
-            return false;
-        };
-        tail
-    } else {
-        input
-    };
-
-    generic::check_unaligned_chunks_with(
-        tail,
-        |chunk| _mm256_movemask_epi8(valid_avx2(chunk)) == -1,
-        |remainder| generic::check_one_unaligned_chunk(remainder, |c| check_chunk_sse2(c)),
-    )
-}
-
-/// Checks `input` in 128-byte chunks and returns the unchecked remainder, or `None` if invalid.
-///
-/// Kept out of line so the path for inputs under 128 bytes stays compact.
-#[inline(never)]
-#[target_feature(enable = "avx2")]
-unsafe fn check_avx2_128(input: &[u8]) -> Option<&[u8]> {
-    let mut chunks = input.chunks_exact(128);
-    for chunk in &mut chunks {
-        let [c0, c1, c2, c3] = chunk.as_ptr().cast::<[__m256i; 4]>().read_unaligned();
-        let v01 = _mm256_and_si256(valid_avx2(c0), valid_avx2(c1));
-        let v23 = _mm256_and_si256(valid_avx2(c2), valid_avx2(c3));
-        if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
-            return None;
-        }
-    }
-    Some(chunks.remainder())
-}
-
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn valid_avx2(chunk: __m256i) -> __m256i {
     let digit_bias = _mm256_set1_epi8(0xB0_u8 as i8); // '0' + 0x80
     let alpha_bias = _mm256_set1_epi8(0xC1_u8 as i8); // 'A' + 0x80
     let case_mask = _mm256_set1_epi8(0xDF_u8 as i8);
     let digit_threshold = _mm256_set1_epi8(-118); // i8::MIN + 10
     let alpha_threshold = _mm256_set1_epi8(-122); // i8::MIN + 6
 
-    let x1 = _mm256_sub_epi8(chunk, digit_bias);
-    let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
+    let valid = |chunk: __m256i| {
+        let x1 = _mm256_sub_epi8(chunk, digit_bias);
+        let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
 
-    let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_bias);
-    let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
+        let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_bias);
+        let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
 
-    _mm256_or_si256(m1, m2)
+        _mm256_or_si256(m1, m2)
+    };
+
+    let mut tail = input;
+    if input.len() >= 128 {
+        let mut chunks = input.chunks_exact(128);
+        for chunk in &mut chunks {
+            let [c0, c1, c2, c3] = chunk.as_ptr().cast::<[__m256i; 4]>().read_unaligned();
+            let v01 = _mm256_and_si256(valid(c0), valid(c1));
+            let v23 = _mm256_and_si256(valid(c2), valid(c3));
+            if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
+                return false;
+            }
+        }
+        tail = chunks.remainder();
+    }
+
+    generic::check_unaligned_chunks_with(
+        tail,
+        |chunk| _mm256_movemask_epi8(valid(chunk)) == -1,
+        |remainder| generic::check_one_unaligned_chunk(remainder, |c| check_chunk_sse2(c)),
+    )
 }
 
 #[target_feature(enable = "sse2")]
