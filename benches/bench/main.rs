@@ -368,6 +368,21 @@ macro_rules! benches {
             }
         }
 
+        mod display {
+            use super::*;
+
+            $(
+                #[divan::bench]
+                fn $name(b: Bencher) {
+                    let mut buf = Vec::with_capacity($enc.len() * 2 + 2);
+                    b.bench_local(|| {
+                        buf.clear();
+                        write!(&mut buf, "{:#x}", ::const_hex::display(black_box($enc)))
+                    });
+                }
+            )*
+        }
+
         mod format {
             use super::*;
 

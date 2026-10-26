@@ -1,4 +1,4 @@
-use crate::{byte2hex, imp};
+use crate::byte2hex;
 use core::fmt;
 use core::slice;
 use core::str;
@@ -153,7 +153,7 @@ impl<const N: usize, const PREFIX: bool> Buffer<N, PREFIX> {
         unsafe {
             let buf = self.as_mut_bytes();
             let output = buf.get_unchecked_mut(PREFIX as usize * 2..);
-            imp::encode::<UPPER>(input, output);
+            crate::encode_uninit::<UPPER>(input, crate::impl_core::slice_as_uninit_mut(output));
             str::from_utf8_unchecked_mut(buf)
         }
     }

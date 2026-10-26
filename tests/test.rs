@@ -212,12 +212,13 @@ fn serde_lengths() {
         #[serde(serialize_with = "const_hex::serde::no_prefix::serialize_upper")] &'a [u8],
     );
 
-    // Small-value threshold, SIMD tails, and 4 KiB output buffer boundaries,
+    // Small-value threshold, SIMD tails, and 1 KiB chunk boundaries,
     // both with and without the two-byte prefix.
     for len in [
-        0, 1, 127, 128, 129, 159, 2047, 2048, 2049, 4095, 4096, 4097, 65537,
+        0, 1, 127, 128, 129, 159, 1023, 1024, 1025, 2047, 2048, 2049, 4095, 4096, 4097, 65537,
     ] {
-        let data = (0..len).map(|i| i as u8).collect::<Vec<u8>>();
+        // Vary the bytes per 1 KiB chunk, so a repeated or misplaced chunk is detected.
+        let data = (0..len).map(|i| (i + i / 1024) as u8).collect::<Vec<u8>>();
         let quoted = |s: String| format!("\"{s}\"");
         let lower = hex::encode(&data);
         let upper = lower.to_uppercase();
@@ -269,7 +270,7 @@ const ALL_UPPER: &str = "000102030405060708090A0B0C0D0E0F101112131415161718191A1
 #[test]
 fn check_simd_boundaries() {
     for size in [
-        1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257,
+        1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 384,
     ] {
         let valid_lower: String = "a".repeat(size);
         let valid_upper: String = "F".repeat(size);
@@ -279,7 +280,18 @@ fn check_simd_boundaries() {
         assert!(const_hex::check_raw(&valid_upper), "failed at size {size}");
         assert!(const_hex::check_raw(&valid_mixed), "failed at size {size}");
 
-        for pos in [0, size / 2, size.saturating_sub(1)] {
+        for pos in [
+            0,
+            size / 2,
+            size.saturating_sub(1),
+            31,
+            32,
+            64,
+            96,
+            127,
+            128,
+            224,
+        ] {
             if pos < size {
                 let mut invalid = valid_lower.clone().into_bytes();
                 invalid[pos] = b'g';
@@ -336,15 +348,32 @@ fn encode_to_slice_simd_boundaries() {
 
 #[test]
 fn check_all_invalid_chars() {
-    for c in 0u8..=255 {
-        let is_valid = c.is_ascii_hexdigit();
-        let input = [c];
-        assert_eq!(
-            const_hex::check_raw(input),
-            is_valid,
-            "char {c} (0x{c:02x}) should be {}",
-            if is_valid { "valid" } else { "invalid" }
-        );
+    // Miri is slow; 25 bytes still reaches the 16-byte, 8-byte, and tail paths.
+    let lens = if cfg!(miri) {
+        vec![1, 25]
+    } else {
+        (1..=33).collect()
+    };
+    for len in lens {
+        let mut input = vec![b'a'; len];
+        for pos in 0..len {
+            for c in 0u8..=255 {
+                let is_valid = c.is_ascii_hexdigit();
+                input[pos] = c;
+                let expected = if is_valid { "valid" } else { "invalid" };
+                assert_eq!(
+                    const_hex::check_raw(&input),
+                    is_valid,
+                    "char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
+                );
+                assert_eq!(
+                    const_hex::const_check_raw(&input),
+                    is_valid,
+                    "const: char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
+                );
+            }
+            input[pos] = b'a';
+        }
     }
 }
 
@@ -488,6 +517,65 @@ fn display_propagates_write_errors() {
         };
         assert_eq!(write!(sink, "{:#X}", const_hex::display(&bytes)), Ok(()));
         assert_eq!(sink.written, len * 2 + 2, "len {len}: short write");
+    }
+}
+
+#[test]
+#[cfg(feature = "alloc")]
+fn display_lengths() {
+    use core::fmt::{self, Write};
+
+    /// A sink that records each `write_str` and fails at the `fail_at`-th one.
+    struct Sink {
+        writes: Vec<usize>,
+        fail_at: usize,
+    }
+
+    impl fmt::Write for Sink {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            self.writes.push(s.len());
+            if self.writes.len() >= self.fail_at {
+                return Err(fmt::Error);
+            }
+            Ok(())
+        }
+    }
+
+    // Inputs around the 1 KiB chunk size, with and without the prefix.
+    for len in [
+        0_usize, 1, 31, 32, 33, 1023, 1024, 1025, 2047, 2048, 2049, 3073,
+    ] {
+        // Vary the bytes per chunk, so a repeated or misplaced chunk is detected.
+        let data = (0..len)
+            .map(|i| (i * 7 + i / 1024) as u8)
+            .collect::<Vec<u8>>();
+        let lower = hex::encode(&data);
+        let upper = lower.to_uppercase();
+        let display = const_hex::display(&data);
+        assert_eq!(format!("{display}"), lower, "len={len}");
+        assert_eq!(format!("{display:x}"), lower, "len={len}");
+        assert_eq!(format!("{display:#x}"), format!("0x{lower}"), "len={len}");
+        assert_eq!(format!("{display:X}"), upper, "len={len}");
+        assert_eq!(format!("{display:#X}"), format!("0x{upper}"), "len={len}");
+
+        // One write per chunk, with the prefix in the first.
+        let mut sink = Sink {
+            writes: vec![],
+            fail_at: usize::MAX,
+        };
+        write!(sink, "{display:#x}").unwrap();
+        assert_eq!(sink.writes.len(), len.div_ceil(1024).max(1), "len={len}");
+        assert_eq!(sink.writes.iter().sum::<usize>(), len * 2 + 2, "len={len}");
+
+        // An error in any chunk stops further writes.
+        for fail_at in 1..=sink.writes.len() {
+            let mut sink = Sink {
+                writes: vec![],
+                fail_at,
+            };
+            assert_eq!(write!(sink, "{display:#x}"), Err(fmt::Error), "len={len}");
+            assert_eq!(sink.writes.len(), fail_at, "len={len}");
+        }
     }
 }
 
