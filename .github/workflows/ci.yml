@@ -102,10 +102,9 @@ jobs:
             rustflags: -Ctarget-feature=+avx2
           # Big-endian.
           - target: s390x-unknown-linux-gnu
-            flags: ""
     env:
       MIRIFLAGS: -Zmiri-strict-provenance
-      RUSTFLAGS: ${{ matrix.rustflags }}
+      RUSTFLAGS: -Dwarnings ${{ matrix.rustflags }}
       RUSTDOCFLAGS: ${{ matrix.rustflags }}
     steps:
       - uses: actions/checkout@v4
