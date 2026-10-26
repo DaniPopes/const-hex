@@ -150,25 +150,44 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
         _mm256_or_si256(m1, m2)
     };
 
-    let mut tail = input;
-    if input.len() >= 128 {
-        let mut chunks = input.chunks_exact(128);
-        for chunk in &mut chunks {
-            let [c0, c1, c2, c3] = chunk.as_ptr().cast::<[__m256i; 4]>().read_unaligned();
-            let v01 = _mm256_and_si256(valid(c0), valid(c1));
-            let v23 = _mm256_and_si256(valid(c2), valid(c3));
-            if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
-                return false;
-            }
-        }
-        tail = chunks.remainder();
-    }
+    let len = input.len();
+    let ptr = input.as_ptr();
 
-    generic::check_unaligned_chunks_with(
-        tail,
-        |chunk| _mm256_movemask_epi8(valid(chunk)) == -1,
-        |remainder| generic::check_one_unaligned_chunk(remainder, |c| check_chunk_sse2(c)),
-    )
+    if len >= 32 {
+        let mut tail = input;
+        if len >= 128 {
+            let mut chunks = input.chunks_exact(128);
+            for chunk in &mut chunks {
+                let [c0, c1, c2, c3] = chunk.as_ptr().cast::<[__m256i; 4]>().read_unaligned();
+                let v01 = _mm256_and_si256(valid(c0), valid(c1));
+                let v23 = _mm256_and_si256(valid(c2), valid(c3));
+                if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
+                    return false;
+                }
+            }
+            tail = chunks.remainder();
+        }
+
+        let check32 = |chunk: __m256i| _mm256_movemask_epi8(valid(chunk)) == -1;
+        generic::check_unaligned_chunks_with(tail, check32, |_| {
+            // Re-check the last 32 bytes, overlapping what was already checked.
+            check32(ptr.add(len - 32).cast::<__m256i>().read_unaligned())
+        })
+    } else if len < 4 {
+        generic::check(input)
+    } else if len >= 16 {
+        let first = valid_sse2(_mm_loadu_si128(ptr.cast()));
+        let last = valid_sse2(_mm_loadu_si128(ptr.add(len - 16).cast()));
+        _mm_movemask_epi8(_mm_and_si128(first, last)) == 0xffff
+    } else if len >= 8 {
+        let first = _mm_loadl_epi64(ptr.cast());
+        let last = _mm_loadl_epi64(ptr.add(len - 8).cast());
+        _mm_movemask_epi8(valid_sse2(_mm_unpacklo_epi64(first, last))) == 0xffff
+    } else {
+        let first = _mm_cvtsi32_si128(ptr.cast::<i32>().read_unaligned());
+        let last = _mm_cvtsi32_si128(ptr.add(len - 4).cast::<i32>().read_unaligned());
+        _mm_movemask_epi8(valid_sse2(_mm_unpacklo_epi32(first, last))) & 0xff == 0xff
+    }
 }
 
 #[target_feature(enable = "sse2")]
@@ -179,6 +198,13 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn check_chunk_sse2(chunk: __m128i) -> bool {
+    _mm_movemask_epi8(valid_sse2(chunk)) == 0xffff
+}
+
+/// Per-byte validity mask: `0xFF` for hex digits, `0x00` otherwise.
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn valid_sse2(chunk: __m128i) -> __m128i {
     let digit_bias = _mm_set1_epi8(0xB0_u8 as i8);
     let alpha_bias = _mm_set1_epi8(0xC1_u8 as i8);
     let case_mask = _mm_set1_epi8(0xDF_u8 as i8);
@@ -191,7 +217,7 @@ unsafe fn check_chunk_sse2(chunk: __m128i) -> bool {
     let x2 = _mm_sub_epi8(_mm_and_si128(chunk, case_mask), alpha_bias);
     let m2 = _mm_cmpgt_epi8(alpha_threshold, x2);
 
-    _mm_movemask_epi8(_mm_or_si128(m1, m2)) == 0xffff
+    _mm_or_si128(m1, m2)
 }
 
 #[inline]
@@ -271,57 +297,138 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
 #[target_feature(enable = "avx2")]
 unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     debug_assert_eq!(output.len(), input.len() / 2);
+    debug_assert_eq!(input.len() % 2, 0);
 
+    let len = input.len();
+    let ip = input.as_ptr();
+    let op = output.as_mut_ptr().cast::<u8>();
+
+    // Every branch decodes the last chunk last, overlapping what was already decoded.
+    // `len` is even, so the overlapping chunk starts on a hex pair and rewrites the same bytes.
+    if len >= 64 {
+        let mut i = 0;
+        while i + 64 <= len {
+            if !decode_64(ip.add(i), op.add(i / 2)) {
+                return false;
+            }
+            i += 64;
+        }
+        i == len || decode_64(ip.add(len - 64), op.add((len - 64) / 2))
+    } else if len >= 32 {
+        decode_32(ip, op) && (len == 32 || decode_32(ip.add(len - 32), op.add((len - 32) / 2)))
+    } else if len >= 16 {
+        decode_16(ip, op) && decode_16(ip.add(len - 16), op.add((len - 16) / 2))
+    } else if len >= 8 {
+        decode_8(ip, op) && decode_8(ip.add(len - 8), op.add((len - 8) / 2))
+    } else {
+        generic::decode_checked(input, output)
+    }
+}
+
+/// Converts ASCII hex to nibbles: hex digits become 0..15, anything else becomes > 15.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn nibbles_avx2(v: __m256i) -> __m256i {
     let add_c6 = _mm256_set1_epi8(0xC6u8 as i8); // 0xFF - b'9'
     let six = _mm256_set1_epi8(6);
     let f0 = _mm256_set1_epi8(0xF0u8 as i8);
     let df = _mm256_set1_epi8(0xDFu8 as i8);
     let big_a = _mm256_set1_epi8(b'A' as i8);
     let ten = _mm256_set1_epi8(10);
+
+    // Digits '0'..'9' → 0..9, others > 15.
+    let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
+
+    // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
+    let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
+
+    // Valid nibble wins (0..15), invalid stays > 15.
+    _mm256_min_epu8(d, a)
+}
+
+/// [`nibbles_avx2`] for 16 bytes.
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn nibbles_sse2(v: __m128i) -> __m128i {
+    let add_c6 = _mm_set1_epi8(0xC6u8 as i8);
+    let six = _mm_set1_epi8(6);
+    let f0 = _mm_set1_epi8(0xF0u8 as i8);
+    let df = _mm_set1_epi8(0xDFu8 as i8);
+    let big_a = _mm_set1_epi8(b'A' as i8);
+    let ten = _mm_set1_epi8(10);
+
+    let d = _mm_sub_epi8(_mm_subs_epu8(_mm_add_epi8(v, add_c6), six), f0);
+    let a = _mm_adds_epu8(_mm_sub_epi8(_mm_and_si128(v, df), big_a), ten);
+    _mm_min_epu8(d, a)
+}
+
+/// Decodes 64 hex characters to 32 bytes. Returns `false` if any is invalid.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_64(ip: *const u8, op: *mut u8) -> bool {
+    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
     let weights = _mm256_set1_epi16(0x0110);
 
-    generic::decode_checked_unaligned_chunks_with(
-        input,
-        output,
-        |[v1, v2]: [__m256i; 2]| {
-            // Digits '0'..'9' → 0..9, others > 15.
-            let d1 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v1, add_c6), six), f0);
-            let d2 = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v2, add_c6), six), f0);
+    let n1 = nibbles_avx2(_mm256_loadu_si256(ip.cast()));
+    let n2 = nibbles_avx2(_mm256_loadu_si256(ip.add(32).cast()));
 
-            // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
-            let a1 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v1, df), big_a), ten);
-            let a2 = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v2, df), big_a), ten);
+    // Validate: a nibble > 15 has a bit set in 0xF0.
+    if _mm256_testz_si256(_mm256_or_si256(n1, n2), f0) == 0 {
+        return false;
+    }
 
-            // Valid nibble wins (0..15), invalid stays > 15.
-            let n1 = _mm256_min_epu8(d1, a1);
-            let n2 = _mm256_min_epu8(d2, a2);
+    // Merge nibble pairs: hi * 16 + lo.
+    let b1 = _mm256_maddubs_epi16(n1, weights);
+    let b2 = _mm256_maddubs_epi16(n2, weights);
+    let packed = _mm256_packus_epi16(b1, b2);
+    _mm256_storeu_si256(op.cast(), _mm256_permute4x64_epi64(packed, 0b11_01_10_00));
+    true
+}
 
-            // Validate: a nibble > 15 has a bit set in 0xF0.
-            if _mm256_testz_si256(_mm256_or_si256(n1, n2), f0) == 0 {
-                return None;
-            }
+/// Decodes 32 hex characters to 16 bytes. Returns `false` if any is invalid.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_32(ip: *const u8, op: *mut u8) -> bool {
+    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
+    let weights = _mm256_set1_epi16(0x0110);
 
-            // Merge nibble pairs: hi * 16 + lo.
-            let b1 = _mm256_maddubs_epi16(n1, weights);
-            let b2 = _mm256_maddubs_epi16(n2, weights);
-            let packed = _mm256_packus_epi16(b1, b2);
-            Some(_mm256_permute4x64_epi64(packed, 0b11_01_10_00))
-        },
-        |remainder, out| {
-            generic::decode_checked_one_unaligned_chunk(remainder, out, |v: __m256i| {
-                let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
-                let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
-                let n = _mm256_min_epu8(d, a);
+    let n = nibbles_avx2(_mm256_loadu_si256(ip.cast()));
+    if _mm256_testz_si256(n, f0) == 0 {
+        return false;
+    }
 
-                if _mm256_testz_si256(n, f0) == 0 {
-                    return None;
-                }
+    let merged = _mm256_maddubs_epi16(n, weights);
+    let packed = _mm256_packus_epi16(merged, _mm256_setzero_si256());
+    let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
+    _mm_storeu_si128(op.cast(), _mm256_castsi256_si128(result));
+    true
+}
 
-                let merged = _mm256_maddubs_epi16(n, weights);
-                let packed = _mm256_packus_epi16(merged, _mm256_setzero_si256());
-                let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
-                Some(_mm256_castsi256_si128(result))
-            })
-        },
-    )
+/// Decodes 16 hex characters to 8 bytes. Returns `false` if any is invalid.
+#[inline]
+#[target_feature(enable = "sse4.1")]
+unsafe fn decode_16(ip: *const u8, op: *mut u8) -> bool {
+    let n = nibbles_sse2(_mm_loadu_si128(ip.cast()));
+    if _mm_testz_si128(n, _mm_set1_epi8(0xF0u8 as i8)) == 0 {
+        return false;
+    }
+    let merged = _mm_maddubs_epi16(n, _mm_set1_epi16(0x0110));
+    _mm_storel_epi64(op.cast(), _mm_packus_epi16(merged, merged));
+    true
+}
+
+/// Decodes 8 hex characters to 4 bytes. Returns `false` if any is invalid.
+#[inline]
+#[target_feature(enable = "sse4.1")]
+unsafe fn decode_8(ip: *const u8, op: *mut u8) -> bool {
+    let n = nibbles_sse2(_mm_loadl_epi64(ip.cast()));
+    // Only the low 8 bytes hold input; the zeroed upper half is not valid hex.
+    let f0 = _mm_set_epi64x(0, 0xF0F0F0F0F0F0F0F0_u64 as i64);
+    if _mm_testz_si128(n, f0) == 0 {
+        return false;
+    }
+    let merged = _mm_maddubs_epi16(n, _mm_set1_epi16(0x0110));
+    op.cast::<i32>()
+        .write_unaligned(_mm_cvtsi128_si32(_mm_packus_epi16(merged, merged)));
+    true
 }
