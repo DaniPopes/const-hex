@@ -113,12 +113,11 @@ unsafe fn encode_chunk_ssse3<const UPPER: bool>(input: __m128i) -> [__m128i; 2] 
     [_mm_shuffle_epi8(lut, out1), _mm_shuffle_epi8(lut, out2)]
 }
 
-/// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
-/// then a single `cmpgt(start + len, x)` checks if `x` falls within the range.
+/// Hex check using a nibble lookup: a byte is valid iff `LO[b & 0xf] & HI[b >> 4] != 0`.
 ///
-/// - Digits '0'..'9' (0x30..0x39): bias by 0xB0 maps to -128..-119, threshold -118 (10 values).
-/// - Letters 'A'..'F' (0x41..0x46): bias by 0xC1 maps to -128..-123, threshold -122 (6 values).
-///   Case folded with 0xDF mask so 'a'..'f' is handled identically.
+/// Bit 0 of `HI` marks the digit row (high nibble 3) and bit 1 the letter rows (high nibbles 4
+/// and 6). `LO` has bit 0 set for low nibbles 0..=9 and bit 1 for 1..=6. Bytes `>= 0x80` index
+/// `LO` with a set top bit, which `pshufb` maps to 0, so they are never valid.
 ///
 /// Based on Muła & Langdale:
 /// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
@@ -134,21 +133,26 @@ pub(crate) fn check(input: &[u8]) -> bool {
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn check_avx2(input: &[u8]) -> bool {
-    let digit_bias = _mm256_set1_epi8(0xB0_u8 as i8); // '0' + 0x80
-    let alpha_bias = _mm256_set1_epi8(0xC1_u8 as i8); // 'A' + 0x80
-    let case_mask = _mm256_set1_epi8(0xDF_u8 as i8);
-    let digit_threshold = _mm256_set1_epi8(-118); // i8::MIN + 10
-    let alpha_threshold = _mm256_set1_epi8(-122); // i8::MIN + 6
+    #[rustfmt::skip]
+    let lo_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        1, 3, 3, 3, 3, 3, 3, 1, 1, 1, 0, 0, 0, 0, 0, 0,
+    ));
+    #[rustfmt::skip]
+    let hi_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ));
+    let mask_lo = _mm256_set1_epi8(0x0f);
+    let zero = _mm256_setzero_si256();
 
+    // Zero in every invalid byte, nonzero in every valid byte.
     let valid = |chunk: __m256i| {
-        let x1 = _mm256_sub_epi8(chunk, digit_bias);
-        let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
-
-        let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_bias);
-        let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
-
-        _mm256_or_si256(m1, m2)
+        let hi = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), mask_lo);
+        _mm256_and_si256(
+            _mm256_shuffle_epi8(lo_lut, chunk),
+            _mm256_shuffle_epi8(hi_lut, hi),
+        )
     };
+    let all_valid = |v: __m256i| _mm256_movemask_epi8(_mm256_cmpeq_epi8(v, zero)) == 0;
 
     let len = input.len();
     let ptr = input.as_ptr();
@@ -162,16 +166,16 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
         let mut chunks = input.chunks_exact(128);
         for chunk in &mut chunks {
             let [c0, c1, c2, c3] = chunk.as_ptr().cast::<[__m256i; 4]>().read_unaligned();
-            let v01 = _mm256_and_si256(valid(c0), valid(c1));
-            let v23 = _mm256_and_si256(valid(c2), valid(c3));
-            if _mm256_movemask_epi8(_mm256_and_si256(v01, v23)) != -1 {
+            let v01 = _mm256_min_epu8(valid(c0), valid(c1));
+            let v23 = _mm256_min_epu8(valid(c2), valid(c3));
+            if !all_valid(_mm256_min_epu8(v01, v23)) {
                 return false;
             }
         }
         tail = chunks.remainder();
     }
 
-    let check32 = |chunk: __m256i| _mm256_movemask_epi8(valid(chunk)) == -1;
+    let check32 = |chunk: __m256i| all_valid(valid(chunk));
     let mut chunks = tail.chunks_exact(32);
     for chunk in &mut chunks {
         if !check32(chunk.as_ptr().cast::<__m256i>().read_unaligned()) {
