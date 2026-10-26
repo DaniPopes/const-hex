@@ -309,7 +309,8 @@ fn encode_simd_boundaries() {
 #[test]
 #[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
+    let sizes = (1..=70).chain([95, 96, 97, 127, 128, 129]);
+    for size in sizes {
         let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
 
@@ -319,6 +320,22 @@ fn decode_simd_boundaries() {
         let mut output = vec![0u8; size];
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
+
+        // An invalid character at every position, including those that overlapping tails read twice.
+        for pos in 0..hex.len() {
+            let mut bad = hex.clone().into_bytes();
+            bad[pos] = b'g';
+            let bad = String::from_utf8(bad).unwrap();
+            assert!(
+                const_hex::decode(&bad).is_err(),
+                "decode accepted size {size} pos {pos}"
+            );
+            let mut output = vec![0u8; size];
+            assert!(
+                const_hex::decode_to_slice(&bad, &mut output).is_err(),
+                "decode_to_slice accepted size {size} pos {pos}"
+            );
+        }
     }
 }
 
