@@ -376,7 +376,8 @@ fn encode_to_slice_simd_boundaries() {
 #[test]
 fn check_all_invalid_chars() {
     // Miri is slow; these lengths reach each short-input path: under 4, 4..8, 8..16 and 16..32
-    // bytes in the NEON and AVX2 kernels, and the 16-byte, 8-byte and byte loops of the generic one.
+    // bytes in the NEON kernel and in the AVX2 kernel where detected (not under Miri), and the
+    // 16-byte, 8-byte and byte loops of the generic one.
     let lens = if cfg!(miri) {
         vec![1, 5, 11, 25]
     } else {
