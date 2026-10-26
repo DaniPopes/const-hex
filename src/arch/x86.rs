@@ -73,7 +73,7 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
 #[target_feature(enable = "avx2")]
 unsafe fn encode_chunk_avx2<const UPPER: bool>(input: __m256i) -> [__m256i; 2] {
     let lut =
-        _mm256_broadcastsi128_si256(_mm_lddqu_si128(get_chars_table::<UPPER>().as_ptr().cast()));
+        _mm256_broadcastsi128_si256(_mm_loadu_si128(get_chars_table::<UPPER>().as_ptr().cast()));
     let mask_lo = _mm256_set1_epi8(0x0f);
 
     let hi = _mm256_and_si256(_mm256_srli_epi16(input, 4), mask_lo);
@@ -101,7 +101,7 @@ unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
 #[inline]
 #[target_feature(enable = "ssse3")]
 unsafe fn encode_chunk_ssse3<const UPPER: bool>(input: __m128i) -> [__m128i; 2] {
-    let lut = _mm_lddqu_si128(get_chars_table::<UPPER>().as_ptr().cast());
+    let lut = _mm_loadu_si128(get_chars_table::<UPPER>().as_ptr().cast());
     let mask_lo = _mm_set1_epi8(0x0f);
 
     let hi = _mm_and_si128(_mm_srli_epi16(input, 4), mask_lo);
