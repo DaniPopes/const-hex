@@ -12,7 +12,7 @@ It aims to be a drop-in replacement for the [`hex`] crate, as well as extending
 the API with [const-eval], a [const-generics formatting buffer][buffer], similar
 to [`itoa`]'s, and more.
 
-_Version requirement: rustc 1.64+_
+_Version requirement: rustc 1.85+_
 
 [const-eval]: https://docs.rs/const-hex/latest/const_hex/fn.const_encode.html
 [buffer]: https://docs.rs/const-hex/latest/const_hex/struct.Buffer.html
