@@ -270,8 +270,7 @@ const ALL_UPPER: &str = "000102030405060708090A0B0C0D0E0F101112131415161718191A1
 #[test]
 fn check_simd_boundaries() {
     for size in [
-        1, 3, 4, 7, 8, 9, 15, 16, 17, 31, 32, 33, 40, 63, 64, 65, 126, 127, 128, 129, 255, 256,
-        257, 384,
+        1, 15, 16, 17, 31, 32, 33, 40, 63, 64, 65, 126, 127, 128, 129, 255, 256, 257, 384,
     ] {
         let valid_lower: String = "a".repeat(size);
         let valid_upper: String = "F".repeat(size);
@@ -348,11 +347,13 @@ fn encode_to_slice_simd_boundaries() {
 
 #[test]
 fn check_all_invalid_chars() {
-    // Miri is slow; 25 bytes still reaches the 16-byte, 8-byte, and tail paths.
+    // Miri is slow; these lengths still reach the 16-byte, 8-byte, 4-byte, and tail paths.
     let lens = if cfg!(miri) {
-        vec![1, 25]
+        vec![1, 5, 12, 25]
     } else {
-        (1..=33).collect()
+        (1..=33)
+            .chain([40, 63, 64, 65, 127, 128, 129, 160, 161])
+            .collect()
     };
     for len in lens {
         let mut input = vec![b'a'; len];

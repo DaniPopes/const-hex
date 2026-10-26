@@ -169,12 +169,15 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
         }
 
         let check32 = |chunk: __m256i| _mm256_movemask_epi8(valid(chunk)) == -1;
-        generic::check_unaligned_chunks_with(tail, check32, |_| {
-            // Re-check the last 32 bytes, overlapping what was already checked.
-            check32(ptr.add(len - 32).cast::<__m256i>().read_unaligned())
-        })
-    } else if len < 4 {
-        generic::check(input)
+        let mut chunks = tail.chunks_exact(32);
+        for chunk in &mut chunks {
+            if !check32(chunk.as_ptr().cast::<__m256i>().read_unaligned()) {
+                return false;
+            }
+        }
+        // Re-check the last 32 bytes, overlapping what was already checked.
+        chunks.remainder().is_empty()
+            || check32(ptr.add(len - 32).cast::<__m256i>().read_unaligned())
     } else if len >= 16 {
         let first = valid_sse2(_mm_loadu_si128(ptr.cast()));
         let last = valid_sse2(_mm_loadu_si128(ptr.add(len - 16).cast()));
@@ -183,10 +186,12 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
         let first = _mm_loadl_epi64(ptr.cast());
         let last = _mm_loadl_epi64(ptr.add(len - 8).cast());
         _mm_movemask_epi8(valid_sse2(_mm_unpacklo_epi64(first, last))) == 0xffff
-    } else {
+    } else if len >= 4 {
         let first = _mm_cvtsi32_si128(ptr.cast::<i32>().read_unaligned());
         let last = _mm_cvtsi32_si128(ptr.add(len - 4).cast::<i32>().read_unaligned());
         _mm_movemask_epi8(valid_sse2(_mm_unpacklo_epi32(first, last))) & 0xff == 0xff
+    } else {
+        generic::check(input)
     }
 }
 
@@ -300,20 +305,22 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
     // Every branch decodes the last chunk last, overlapping what was already decoded.
     // `len` is even, so the overlapping chunk starts on a hex pair and rewrites the same bytes.
     if len >= 64 {
-        let mut i = 0;
-        while i + 64 <= len {
-            if !decode_64(ip.add(i), op.add(i / 2)) {
+        for i in 0..len / 64 {
+            if !decode_64(ip.add(i * 64), op.add(i * 32)) {
                 return false;
             }
-            i += 64;
         }
-        i == len || decode_64(ip.add(len - 64), op.add((len - 64) / 2))
+        match len % 64 {
+            0 => true,
+            1..=32 => decode_32(ip.add(len - 32), op.add((len - 32) / 2)),
+            _ => decode_64(ip.add(len - 64), op.add((len - 64) / 2)),
+        }
     } else if len >= 32 {
         decode_32(ip, op) && (len == 32 || decode_32(ip.add(len - 32), op.add((len - 32) / 2)))
     } else if len >= 16 {
-        decode_16(ip, op) && decode_16(ip.add(len - 16), op.add((len - 16) / 2))
+        decode_16_31(ip, len, op)
     } else if len >= 8 {
-        decode_8(ip, op) && decode_8(ip.add(len - 8), op.add((len - 8) / 2))
+        decode_8_15(ip, len, op)
     } else {
         generic::decode_checked(input, output)
     }
@@ -382,33 +389,46 @@ unsafe fn decode_32(ip: *const u8, op: *mut u8) -> bool {
     true
 }
 
-/// Decodes 16 hex characters to 8 bytes. Returns `false` if any is invalid.
+/// Decodes the first and last 16 characters of a `16..=31` character input in one pass.
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn decode_16(ip: *const u8, op: *mut u8) -> bool {
-    let v = _mm256_castsi128_si256(_mm_loadu_si128(ip.cast()));
+unsafe fn decode_16_31(ip: *const u8, len: usize, op: *mut u8) -> bool {
+    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
+    let weights = _mm256_set1_epi16(0x0110);
+
+    let v = _mm256_loadu2_m128i(ip.add(len - 16).cast(), ip.cast());
+    let n = nibbles_avx2(v);
+    if _mm256_testz_si256(n, f0) == 0 {
+        return false;
+    }
+
+    let merged = _mm256_maddubs_epi16(n, weights);
+    let packed = _mm256_packus_epi16(merged, merged);
+    _mm_storel_epi64(op.cast(), _mm256_castsi256_si128(packed));
+    _mm_storel_epi64(
+        op.add((len - 16) / 2).cast(),
+        _mm256_extracti128_si256::<1>(packed),
+    );
+    true
+}
+
+/// Decodes the first and last 8 characters of an `8..=15` character input in one pass.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_8_15(ip: *const u8, len: usize, op: *mut u8) -> bool {
+    let first = _mm_loadl_epi64(ip.cast());
+    let last = _mm_loadl_epi64(ip.add(len - 8).cast());
+    let v = _mm256_castsi128_si256(_mm_unpacklo_epi64(first, last));
     let n = _mm256_castsi256_si128(nibbles_avx2(v));
     if _mm_testz_si128(n, _mm_set1_epi8(0xF0u8 as i8)) == 0 {
         return false;
     }
-    let merged = _mm_maddubs_epi16(n, _mm_set1_epi16(0x0110));
-    _mm_storel_epi64(op.cast(), _mm_packus_epi16(merged, merged));
-    true
-}
 
-/// Decodes 8 hex characters to 4 bytes. Returns `false` if any is invalid.
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn decode_8(ip: *const u8, op: *mut u8) -> bool {
-    let v = _mm256_castsi128_si256(_mm_loadl_epi64(ip.cast()));
-    let n = _mm256_castsi256_si128(nibbles_avx2(v));
-    // Only the low 8 bytes hold input; the zeroed upper half is not valid hex.
-    let f0 = _mm_set_epi64x(0, 0xF0F0F0F0F0F0F0F0_u64 as i64);
-    if _mm_testz_si128(n, f0) == 0 {
-        return false;
-    }
     let merged = _mm_maddubs_epi16(n, _mm_set1_epi16(0x0110));
-    op.cast::<i32>()
-        .write_unaligned(_mm_cvtsi128_si32(_mm_packus_epi16(merged, merged)));
+    let packed = _mm_packus_epi16(merged, merged);
+    op.cast::<i32>().write_unaligned(_mm_cvtsi128_si32(packed));
+    op.add((len - 8) / 2)
+        .cast::<i32>()
+        .write_unaligned(_mm_extract_epi32::<1>(packed));
     true
 }
