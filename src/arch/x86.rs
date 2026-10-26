@@ -66,10 +66,15 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], mut output: impl Output) 
     let op = output.as_mut_ptr();
 
     if len >= 32 {
-        let mut o = op;
-        for chunk in input.chunks_exact(32) {
-            encode_32_avx2::<UPPER>(chunk.as_ptr(), o);
-            o = o.add(64);
+        // Unrolled twice: a single-chunk loop runs up to 1.6x slower in some code layouts.
+        let mut i = 0;
+        while len - i >= 64 {
+            encode_32_avx2::<UPPER>(ip.add(i), op.add(i * 2));
+            encode_32_avx2::<UPPER>(ip.add(i + 32), op.add(i * 2 + 64));
+            i += 64;
+        }
+        if len - i >= 32 {
+            encode_32_avx2::<UPPER>(ip.add(i), op.add(i * 2));
         }
         // Encode the last 32 bytes again, overlapping what was already written.
         if len % 32 != 0 {
