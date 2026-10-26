@@ -88,7 +88,26 @@ pub(crate) unsafe fn encode_one_unaligned_chunk<const UPPER: bool, T: Copy, U: C
 /// Default check function.
 #[inline]
 pub(crate) const fn check(mut input: &[u8]) -> bool {
-    while let &[a, b, c, d, e, f, g, h, a2, b2, c2, d2, e2, f2, g2, h2, ref rest @ ..] = input {
+    while let &[
+        a,
+        b,
+        c,
+        d,
+        e,
+        f,
+        g,
+        h,
+        a2,
+        b2,
+        c2,
+        d2,
+        e2,
+        f2,
+        g2,
+        h2,
+        ref rest @ ..,
+    ] = input
+    {
         if check_u64_mask(u64::from_ne_bytes([a, b, c, d, e, f, g, h]))
             | check_u64_mask(u64::from_ne_bytes([a2, b2, c2, d2, e2, f2, g2, h2]))
             != 0
