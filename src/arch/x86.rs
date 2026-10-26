@@ -54,19 +54,67 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
     }
 }
 
+/// # Safety
+///
+/// `output` must be at least `2 * input.len()` bytes long.
 #[inline(never)]
 #[target_feature(enable = "avx2")]
-unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks_with::<UPPER, _, _, _>(
-        input,
-        output,
-        |av| encode_chunk_avx2::<UPPER>(av),
-        |remainder, out| {
-            generic::encode_one_unaligned_chunk::<UPPER, _, _>(remainder, out, |av| {
-                encode_chunk_ssse3::<UPPER>(av)
-            })
-        },
-    );
+unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], mut output: impl Output) {
+    let len = input.len();
+    debug_assert!(output.remaining().is_none_or(|n| n >= len * 2));
+    let ip = input.as_ptr();
+    let op = output.as_mut_ptr();
+
+    if len >= 32 {
+        let mut o = op;
+        for chunk in input.chunks_exact(32) {
+            encode_32_avx2::<UPPER>(chunk.as_ptr(), o);
+            o = o.add(64);
+        }
+        // Encode the last 32 bytes again, overlapping what was already written.
+        if len % 32 != 0 {
+            encode_32_avx2::<UPPER>(ip.add(len - 32), op.add((len - 32) * 2));
+        }
+    } else if len >= 16 {
+        // Two overlapping 16-byte loads; each 32-character half is stored at its own offset.
+        let v = _mm256_inserti128_si256(
+            _mm256_castsi128_si256(_mm_loadu_si128(ip.cast())),
+            _mm_loadu_si128(ip.add(len - 16).cast()),
+            1,
+        );
+        let [a, b] = encode_chunk_avx2::<UPPER>(v);
+        _mm256_storeu_si256(op.cast(), a);
+        _mm256_storeu_si256(op.add((len - 16) * 2).cast(), b);
+    } else if len >= 8 {
+        // Two overlapping 8-byte loads; each 16-character half is stored at its own offset.
+        let v = _mm_unpacklo_epi64(
+            _mm_loadl_epi64(ip.cast()),
+            _mm_loadl_epi64(ip.add(len - 8).cast()),
+        );
+        let [a, b] = encode_chunk_ssse3::<UPPER>(v);
+        _mm_storeu_si128(op.cast(), a);
+        _mm_storeu_si128(op.add((len - 8) * 2).cast(), b);
+    } else if len >= 4 {
+        // Two overlapping 4-byte loads; each 8-character half is stored at its own offset.
+        let v = _mm_unpacklo_epi32(
+            _mm_cvtsi32_si128(ip.cast::<i32>().read_unaligned()),
+            _mm_cvtsi32_si128(ip.add(len - 4).cast::<i32>().read_unaligned()),
+        );
+        let [a, _] = encode_chunk_ssse3::<UPPER>(v);
+        _mm_storel_epi64(op.cast(), a);
+        _mm_storel_epi64(op.add((len - 4) * 2).cast(), _mm_unpackhi_epi64(a, a));
+    } else {
+        generic::encode::<UPPER>(input, output);
+    }
+}
+
+/// Encodes 32 bytes at `ip` to 64 characters at `op`.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn encode_32_avx2<const UPPER: bool>(ip: *const u8, op: *mut u8) {
+    let [a, b] = encode_chunk_avx2::<UPPER>(_mm256_loadu_si256(ip.cast()));
+    _mm256_storeu_si256(op.cast(), a);
+    _mm256_storeu_si256(op.add(32).cast(), b);
 }
 
 #[inline]
