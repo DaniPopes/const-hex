@@ -153,6 +153,10 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
     let len = input.len();
     let ptr = input.as_ptr();
 
+    if len < 4 {
+        return generic::check(input);
+    }
+
     let mut tail = input;
     if len >= 128 {
         let mut chunks = input.chunks_exact(128);
@@ -182,18 +186,15 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
     if len >= 32 {
         check32(ptr.add(len - 32).cast::<__m256i>().read_unaligned())
     } else if len >= 16 {
-        let v = _mm256_loadu2_m128i(ptr.add(len - 16).cast(), ptr.cast());
-        _mm256_movemask_epi8(valid(v)) == -1
+        check32(_mm256_loadu2_m128i(ptr.add(len - 16).cast(), ptr.cast()))
     } else if len >= 8 {
         let first = _mm_loadl_epi64(ptr.cast());
         let last = _mm_loadl_epi64(ptr.add(len - 8).cast());
         _mm_movemask_epi8(valid_sse2(_mm_unpacklo_epi64(first, last))) == 0xffff
-    } else if len >= 4 {
+    } else {
         let first = _mm_cvtsi32_si128(ptr.cast::<i32>().read_unaligned());
         let last = _mm_cvtsi32_si128(ptr.add(len - 4).cast::<i32>().read_unaligned());
         _mm_movemask_epi8(valid_sse2(_mm_unpacklo_epi32(first, last))) & 0xff == 0xff
-    } else {
-        generic::check(input)
     }
 }
 
@@ -203,6 +204,10 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
 }
 
 /// Per-byte validity mask: `0xFF` for hex digits, `0x00` otherwise.
+///
+/// # Safety
+///
+/// The CPU must support SSE2.
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn valid_sse2(chunk: __m128i) -> __m128i {
@@ -308,155 +313,196 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
         return generic::decode_checked(input, output);
     }
 
+    let d = Decoder::new();
+
     // Every branch decodes the last chunk last, overlapping what was already decoded.
     // `len` is even, so the overlapping chunk starts on a hex pair and rewrites the same bytes.
     if len >= 64 {
         for i in 0..len / 128 {
-            if !decode_128(ip.add(i * 128), op.add(i * 64)) {
+            if !d.decode_128(ip.add(i * 128), op.add(i * 64)) {
                 return false;
             }
         }
-        let remainder = len % 128;
+        // At most one 64-character chunk, then a single chunk ending at `len`.
+        let mut remainder = len % 128;
+        if remainder >= 64 {
+            if !d.decode_64(ip.add(len - remainder), op.add((len - remainder) / 2)) {
+                return false;
+            }
+            remainder -= 64;
+        }
         match remainder {
             0 => true,
-            1..=32 => decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2)),
-            33..=64 => decode_64(ip.add(len - 64), op.add((len - 64) / 2)),
-            65..=96 => {
-                decode_64(ip.add(len - remainder), op.add((len - remainder) / 2))
-                    && decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2))
-            }
-            _ => {
-                decode_64(ip.add(len - remainder), op.add((len - remainder) / 2))
-                    && decode_64(ip.add(len - 64), op.add((len - 64) / 2))
-            }
+            1..=32 => d.decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2)),
+            _ => d.decode_64(ip.add(len - 64), op.add((len - 64) / 2)),
         }
     } else if len >= 32 {
-        decode_16_32(ip, 32, op)
-            && (len == 32 || decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2)))
+        d.decode_16_32(ip, 32, op)
+            && (len == 32 || d.decode_16_32(ip.add(len - 32), 32, op.add((len - 32) / 2)))
     } else if len >= 16 {
-        decode_16_32(ip, len, op)
+        d.decode_16_32(ip, len, op)
     } else {
-        decode_8_15(ip, len, op)
+        d.decode_8_15(ip, len, op)
     }
 }
 
-/// Converts ASCII hex to nibbles: hex digits become 0..15, anything else becomes > 15.
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn nibbles_avx2(v: __m256i) -> __m256i {
-    let add_c6 = _mm256_set1_epi8(0xC6u8 as i8); // 0xFF - b'9'
-    let six = _mm256_set1_epi8(6);
-    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
-    let df = _mm256_set1_epi8(0xDFu8 as i8);
-    let big_a = _mm256_set1_epi8(b'A' as i8);
-    let ten = _mm256_set1_epi8(10);
-
-    // Digits '0'..'9' → 0..9, others > 15.
-    let d = _mm256_sub_epi8(_mm256_subs_epu8(_mm256_add_epi8(v, add_c6), six), f0);
-
-    // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
-    let a = _mm256_adds_epu8(_mm256_sub_epi8(_mm256_and_si256(v, df), big_a), ten);
-
-    // Valid nibble wins (0..15), invalid stays > 15.
-    _mm256_min_epu8(d, a)
+/// The vector constants shared by the decode steps, built once per call.
+struct Decoder {
+    add_c6: __m256i,
+    six: __m256i,
+    f0: __m256i,
+    df: __m256i,
+    big_a: __m256i,
+    ten: __m256i,
+    weights: __m256i,
 }
 
-/// Decodes 128 hex characters to 64 bytes. Returns `false` if any is invalid.
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn decode_128(ip: *const u8, op: *mut u8) -> bool {
-    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
-    let weights = _mm256_set1_epi16(0x0110);
-
-    let n1 = nibbles_avx2(_mm256_loadu_si256(ip.cast()));
-    let n2 = nibbles_avx2(_mm256_loadu_si256(ip.add(32).cast()));
-    let n3 = nibbles_avx2(_mm256_loadu_si256(ip.add(64).cast()));
-    let n4 = nibbles_avx2(_mm256_loadu_si256(ip.add(96).cast()));
-
-    let invalid = _mm256_or_si256(_mm256_or_si256(n1, n2), _mm256_or_si256(n3, n4));
-    if _mm256_testz_si256(invalid, f0) == 0 {
-        return false;
+impl Decoder {
+    /// # Safety
+    ///
+    /// The CPU must support AVX2.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn new() -> Self {
+        Self {
+            add_c6: _mm256_set1_epi8(0xC6u8 as i8), // 0xFF - b'9'
+            six: _mm256_set1_epi8(6),
+            f0: _mm256_set1_epi8(0xF0u8 as i8),
+            df: _mm256_set1_epi8(0xDFu8 as i8),
+            big_a: _mm256_set1_epi8(b'A' as i8),
+            ten: _mm256_set1_epi8(10),
+            weights: _mm256_set1_epi16(0x0110),
+        }
     }
 
-    let p1 = _mm256_packus_epi16(
-        _mm256_maddubs_epi16(n1, weights),
-        _mm256_maddubs_epi16(n2, weights),
-    );
-    let p2 = _mm256_packus_epi16(
-        _mm256_maddubs_epi16(n3, weights),
-        _mm256_maddubs_epi16(n4, weights),
-    );
-    _mm256_storeu_si256(op.cast(), _mm256_permute4x64_epi64(p1, 0b11_01_10_00));
-    _mm256_storeu_si256(
-        op.add(32).cast(),
-        _mm256_permute4x64_epi64(p2, 0b11_01_10_00),
-    );
-    true
-}
+    /// Converts ASCII hex to nibbles: hex digits become 0..15, anything else becomes > 15.
+    ///
+    /// # Safety
+    ///
+    /// The CPU must support AVX2.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn nibbles(&self, v: __m256i) -> __m256i {
+        // Digits '0'..'9' → 0..9, others > 15.
+        let d = _mm256_sub_epi8(
+            _mm256_subs_epu8(_mm256_add_epi8(v, self.add_c6), self.six),
+            self.f0,
+        );
 
-/// Decodes 64 hex characters to 32 bytes. Returns `false` if any is invalid.
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn decode_64(ip: *const u8, op: *mut u8) -> bool {
-    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
-    let weights = _mm256_set1_epi16(0x0110);
+        // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
+        let a = _mm256_adds_epu8(
+            _mm256_sub_epi8(_mm256_and_si256(v, self.df), self.big_a),
+            self.ten,
+        );
 
-    let n1 = nibbles_avx2(_mm256_loadu_si256(ip.cast()));
-    let n2 = nibbles_avx2(_mm256_loadu_si256(ip.add(32).cast()));
-
-    // Validate: a nibble > 15 has a bit set in 0xF0.
-    if _mm256_testz_si256(_mm256_or_si256(n1, n2), f0) == 0 {
-        return false;
+        // Valid nibble wins (0..15), invalid stays > 15.
+        _mm256_min_epu8(d, a)
     }
 
-    // Merge nibble pairs: hi * 16 + lo.
-    let b1 = _mm256_maddubs_epi16(n1, weights);
-    let b2 = _mm256_maddubs_epi16(n2, weights);
-    let packed = _mm256_packus_epi16(b1, b2);
-    _mm256_storeu_si256(op.cast(), _mm256_permute4x64_epi64(packed, 0b11_01_10_00));
-    true
-}
-
-/// Decodes the first and last 16 characters of a `16..=32` character input in one pass.
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn decode_16_32(ip: *const u8, len: usize, op: *mut u8) -> bool {
-    let f0 = _mm256_set1_epi8(0xF0u8 as i8);
-    let weights = _mm256_set1_epi16(0x0110);
-
-    let v = _mm256_loadu2_m128i(ip.add(len - 16).cast(), ip.cast());
-    let n = nibbles_avx2(v);
-    if _mm256_testz_si256(n, f0) == 0 {
-        return false;
+    /// Merges nibble pairs (hi * 16 + lo) of two vectors and stores the 32 resulting bytes.
+    ///
+    /// # Safety
+    ///
+    /// `op` must be valid for writing 32 bytes.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn store_pair(&self, n1: __m256i, n2: __m256i, op: *mut u8) {
+        let b1 = _mm256_maddubs_epi16(n1, self.weights);
+        let b2 = _mm256_maddubs_epi16(n2, self.weights);
+        let packed = _mm256_packus_epi16(b1, b2);
+        _mm256_storeu_si256(op.cast(), _mm256_permute4x64_epi64(packed, 0b11_01_10_00));
     }
 
-    let merged = _mm256_maddubs_epi16(n, weights);
-    let packed = _mm256_packus_epi16(merged, merged);
-    _mm_storel_epi64(op.cast(), _mm256_castsi256_si128(packed));
-    _mm_storel_epi64(
-        op.add((len - 16) / 2).cast(),
-        _mm256_extracti128_si256::<1>(packed),
-    );
-    true
-}
+    /// Decodes 128 hex characters to 64 bytes. Returns `false` if any is invalid.
+    ///
+    /// # Safety
+    ///
+    /// `ip` must be valid for reading 128 bytes and `op` for writing 64.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn decode_128(&self, ip: *const u8, op: *mut u8) -> bool {
+        let n1 = self.nibbles(_mm256_loadu_si256(ip.cast()));
+        let n2 = self.nibbles(_mm256_loadu_si256(ip.add(32).cast()));
+        let n3 = self.nibbles(_mm256_loadu_si256(ip.add(64).cast()));
+        let n4 = self.nibbles(_mm256_loadu_si256(ip.add(96).cast()));
 
-/// Decodes the first and last 8 characters of an `8..=15` character input in one pass.
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn decode_8_15(ip: *const u8, len: usize, op: *mut u8) -> bool {
-    let first = _mm_loadl_epi64(ip.cast());
-    let last = _mm_loadl_epi64(ip.add(len - 8).cast());
-    let v = _mm256_castsi128_si256(_mm_unpacklo_epi64(first, last));
-    let n = _mm256_castsi256_si128(nibbles_avx2(v));
-    if _mm_testz_si128(n, _mm_set1_epi8(0xF0u8 as i8)) == 0 {
-        return false;
+        // Validate: a nibble > 15 has a bit set in 0xF0.
+        let any = _mm256_or_si256(_mm256_or_si256(n1, n2), _mm256_or_si256(n3, n4));
+        if _mm256_testz_si256(any, self.f0) == 0 {
+            return false;
+        }
+
+        self.store_pair(n1, n2, op);
+        self.store_pair(n3, n4, op.add(32));
+        true
     }
 
-    let merged = _mm_maddubs_epi16(n, _mm_set1_epi16(0x0110));
-    let packed = _mm_packus_epi16(merged, merged);
-    op.cast::<i32>().write_unaligned(_mm_cvtsi128_si32(packed));
-    op.add((len - 8) / 2)
-        .cast::<i32>()
-        .write_unaligned(_mm_extract_epi32::<1>(packed));
-    true
+    /// Decodes 64 hex characters to 32 bytes. Returns `false` if any is invalid.
+    ///
+    /// # Safety
+    ///
+    /// `ip` must be valid for reading 64 bytes and `op` for writing 32.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn decode_64(&self, ip: *const u8, op: *mut u8) -> bool {
+        let n1 = self.nibbles(_mm256_loadu_si256(ip.cast()));
+        let n2 = self.nibbles(_mm256_loadu_si256(ip.add(32).cast()));
+        if _mm256_testz_si256(_mm256_or_si256(n1, n2), self.f0) == 0 {
+            return false;
+        }
+
+        self.store_pair(n1, n2, op);
+        true
+    }
+
+    /// Decodes the first and last 16 characters of a `16..=32` character input in one pass.
+    ///
+    /// # Safety
+    ///
+    /// `ip` must be valid for reading `len` bytes and `op` for writing `len / 2`, with
+    /// `16 <= len <= 32` and `len` even.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn decode_16_32(&self, ip: *const u8, len: usize, op: *mut u8) -> bool {
+        let v = _mm256_loadu2_m128i(ip.add(len - 16).cast(), ip.cast());
+        let n = self.nibbles(v);
+        if _mm256_testz_si256(n, self.f0) == 0 {
+            return false;
+        }
+
+        let merged = _mm256_maddubs_epi16(n, self.weights);
+        let packed = _mm256_packus_epi16(merged, merged);
+        _mm_storel_epi64(op.cast(), _mm256_castsi256_si128(packed));
+        _mm_storel_epi64(
+            op.add((len - 16) / 2).cast(),
+            _mm256_extracti128_si256::<1>(packed),
+        );
+        true
+    }
+
+    /// Decodes the first and last 8 characters of an `8..=15` character input in one pass.
+    ///
+    /// # Safety
+    ///
+    /// `ip` must be valid for reading `len` bytes and `op` for writing `len / 2`, with
+    /// `8 <= len <= 15` and `len` even.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn decode_8_15(&self, ip: *const u8, len: usize, op: *mut u8) -> bool {
+        let first = _mm_loadl_epi64(ip.cast());
+        let last = _mm_loadl_epi64(ip.add(len - 8).cast());
+        let v = _mm256_castsi128_si256(_mm_unpacklo_epi64(first, last));
+        let n = _mm256_castsi256_si128(self.nibbles(v));
+        if _mm_testz_si128(n, _mm256_castsi256_si128(self.f0)) == 0 {
+            return false;
+        }
+
+        let merged = _mm_maddubs_epi16(n, _mm256_castsi256_si128(self.weights));
+        let packed = _mm_packus_epi16(merged, merged);
+        op.cast::<i32>().write_unaligned(_mm_cvtsi128_si32(packed));
+        op.add((len - 8) / 2)
+            .cast::<i32>()
+            .write_unaligned(_mm_extract_epi32::<1>(packed));
+        true
+    }
 }

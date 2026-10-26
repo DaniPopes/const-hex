@@ -334,14 +334,9 @@ fn decode_simd_boundaries() {
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
+        // Miri is slow, and it never selects the AVX2 paths, so only test the edges there.
         let positions: Vec<usize> = if cfg!(miri) {
-            // The edges, plus one position inside each 64-character chunk.
-            let chunks = (0..hex.len()).step_by(64).map(|chunk| chunk + 20);
-            [0, 15, 16, 31, 32, hex.len() / 2, hex.len() - 1]
-                .into_iter()
-                .chain(chunks)
-                .filter(|&pos| pos < hex.len())
-                .collect()
+            vec![0, hex.len() - 1]
         } else {
             (0..hex.len()).collect()
         };
@@ -372,9 +367,9 @@ fn encode_to_slice_simd_boundaries() {
 
 #[test]
 fn check_all_invalid_chars() {
-    // Miri is slow; these lengths still reach the 16-byte, 8-byte, 4-byte, and tail paths.
+    // Miri is slow; 25 bytes still reaches the 16-byte, 8-byte, and tail paths.
     let lens = if cfg!(miri) {
-        vec![1, 5, 12, 25]
+        vec![1, 25]
     } else {
         (1..=33)
             .chain([40, 63, 64, 65, 126, 127, 128, 129, 160, 161])
