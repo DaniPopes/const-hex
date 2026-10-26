@@ -320,10 +320,16 @@ fn encode_simd_boundaries() {
 #[test]
 #[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
-    for size in [
-        1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 40, 63, 64, 65, 96, 126, 127, 128, 129,
-        160,
-    ] {
+    // Miri is slow; the extra sizes only reach more of the AVX2 tails.
+    let sizes: &[usize] = if cfg!(miri) {
+        &[1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129]
+    } else {
+        &[
+            1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 40, 63, 64, 65, 96, 126, 127, 128,
+            129, 160,
+        ]
+    };
+    for &size in sizes {
         let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
 
@@ -334,20 +340,22 @@ fn decode_simd_boundaries() {
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
-        // Miri is slow, and it never selects the AVX2 paths, so only test the edges there.
-        let positions: Vec<usize> = if cfg!(miri) {
+        // Miri is slow, and CI's Miri jobs don't enable AVX2, so only test the edges there.
+        let positions = if cfg!(miri) {
             vec![0, hex.len() - 1]
         } else {
             (0..hex.len()).collect()
         };
+        let mut invalid = hex.into_bytes();
         for pos in positions {
-            let mut invalid = hex.clone();
-            invalid.replace_range(pos..=pos, "g");
+            let byte = invalid[pos];
+            invalid[pos] = b'g';
             assert_eq!(
                 const_hex::decode_to_slice(&invalid, &mut output),
                 Err(const_hex::FromHexError::InvalidHexCharacter { c: 'g', index: pos }),
                 "should fail at size {size}, pos {pos}"
             );
+            invalid[pos] = byte;
         }
     }
 }

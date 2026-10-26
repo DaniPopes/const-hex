@@ -240,11 +240,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<T: Copy, U: Copy>(
             None => return false,
         }
     }
-    if !remainder.is_empty() {
-        unsafe { decode_maybe_check::<true>(remainder, output) }
-    } else {
-        true
-    }
+    remainder.is_empty() || unsafe { decode_maybe_check::<true>(remainder, output) }
 }
 
 #[inline]
