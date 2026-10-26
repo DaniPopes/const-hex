@@ -348,15 +348,32 @@ fn encode_to_slice_simd_boundaries() {
 
 #[test]
 fn check_all_invalid_chars() {
-    for c in 0u8..=255 {
-        let is_valid = c.is_ascii_hexdigit();
-        let input = [c];
-        assert_eq!(
-            const_hex::check_raw(input),
-            is_valid,
-            "char {c} (0x{c:02x}) should be {}",
-            if is_valid { "valid" } else { "invalid" }
-        );
+    // Miri is slow; 25 bytes still reaches the 16-byte, 8-byte, and tail paths.
+    let lens = if cfg!(miri) {
+        vec![1, 25]
+    } else {
+        (1..=33).collect()
+    };
+    for len in lens {
+        let mut input = vec![b'a'; len];
+        for pos in 0..len {
+            for c in 0u8..=255 {
+                let is_valid = c.is_ascii_hexdigit();
+                input[pos] = c;
+                let expected = if is_valid { "valid" } else { "invalid" };
+                assert_eq!(
+                    const_hex::check_raw(&input),
+                    is_valid,
+                    "char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
+                );
+                assert_eq!(
+                    const_hex::const_check_raw(&input),
+                    is_valid,
+                    "const: char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
+                );
+            }
+            input[pos] = b'a';
+        }
     }
 }
 
