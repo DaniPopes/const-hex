@@ -204,7 +204,30 @@ pub(crate) fn check_one_unaligned_chunk<T: Copy>(
 #[inline]
 #[allow(dead_code)]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
+    // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
+    // loop below. Shorter inputs keep the inlined loop, which is faster for them.
+    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) && input.len() >= 16 {
+        return unsafe { decode_checked_swar(input, output) };
+    }
     unsafe { decode_maybe_check::<true>(input, output) }
+}
+
+/// Checked-decodes 16 hex characters at a time, then the remainder with the scalar loop.
+///
+/// # Safety
+///
+/// Assumes `output.len() == input.len() / 2`.
+#[inline(never)]
+unsafe fn decode_checked_swar(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
+    unsafe {
+        decode_checked_unaligned_chunks(input, output, |[x, y]: [[u8; 8]; 2]| {
+            let (x, y) = (u64::from_le_bytes(x), u64::from_le_bytes(y));
+            if check_u64_mask(x) | check_u64_mask(y) != 0 {
+                return None;
+            }
+            Some((decode_u64(x) as u64 | (decode_u64(y) as u64) << 32).to_le_bytes())
+        })
+    }
 }
 
 /// Default unchecked decoding function.
@@ -224,20 +247,7 @@ pub(crate) unsafe fn decode_unchecked(input: &[u8], output: impl Output) {
 ///
 /// Assumes `output.len() == input.len() / 2` and that the input is valid hex if `CHECK` is `true`.
 #[inline(always)]
-unsafe fn decode_maybe_check<const CHECK: bool>(mut input: &[u8], mut output: impl Output) -> bool {
-    // On 32-bit targets `u64` is emulated, which makes this slower than the loop below.
-    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
-        let (chunks, rest) = chunks_unaligned::<[[u8; 8]; 2]>(input);
-        for [x, y] in chunks {
-            let (x, y) = (u64::from_le_bytes(x), u64::from_le_bytes(y));
-            if CHECK && check_u64_mask(x) | check_u64_mask(y) != 0 {
-                return false;
-            }
-            output.write(&decode_u64(x).to_le_bytes());
-            output.write(&decode_u64(y).to_le_bytes());
-        }
-        input = rest;
-    }
+unsafe fn decode_maybe_check<const CHECK: bool>(input: &[u8], mut output: impl Output) -> bool {
     let l = output.remaining().unwrap_or(input.len() / 2);
     debug_assert_eq!(l, input.len() / 2);
     let mut i = 0;

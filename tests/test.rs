@@ -340,12 +340,11 @@ fn decode_simd_boundaries() {
             "upper, size {size}"
         );
 
-        // The first invalid character is reported even when a later one follows.
+        // An invalid character at every position is reported at that index.
         let step = if cfg!(miri) { 7 } else { 1 };
-        for index in (0..hex.len() - 1).step_by(step) {
+        for index in (0..hex.len()).step_by(step) {
             let mut bad = hex.clone().into_bytes();
             bad[index] = b'g';
-            bad[hex.len() - 1] = b'g';
             let err = const_hex::FromHexError::InvalidHexCharacter { c: 'g', index };
             assert_eq!(const_hex::decode(&bad), Err(err), "size {size}");
         }
