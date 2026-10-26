@@ -296,13 +296,19 @@ fn check_simd_boundaries() {
 #[test]
 #[cfg(feature = "alloc")]
 fn encode_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
-        let input: Vec<u8> = (0..size).map(|i| i as u8).collect();
+    for size in (0..=40).chain([63, 64, 65, 127, 128, 129]) {
+        let input: Vec<u8> = (0..size)
+            .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
+            .collect();
         let encoded = const_hex::encode(&input);
         assert_eq!(encoded.len(), size * 2, "encode failed at size {size}");
 
         let expected: String = input.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(encoded, expected, "encode mismatch at size {size}");
+
+        let encoded = const_hex::encode_upper(&input);
+        let expected: String = input.iter().map(|b| format!("{b:02X}")).collect();
+        assert_eq!(encoded, expected, "encode_upper mismatch at size {size}");
     }
 }
 

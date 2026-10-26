@@ -30,22 +30,60 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 }
 
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl Output) {
-    // Load table.
-    let hex_table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
+pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], mut output: impl Output) {
+    let table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
+    let len = input.len();
+    let ip = input.as_ptr();
+    let op = output.as_mut_ptr();
 
-    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: uint8x16_t| {
-        // Load input bytes and mask to nibbles.
-        let mut lo = vandq_u8(chunk, vdupq_n_u8(0x0F));
-        let mut hi = vshrq_n_u8(chunk, 4);
+    if len >= 16 {
+        let mut o = op;
+        for chunk in input.chunks_exact(16) {
+            encode_16(table, chunk.as_ptr(), o);
+            o = o.add(32);
+        }
+        // Encode the last 16 bytes again, overlapping what was already written.
+        if len % 16 != 0 {
+            encode_16(table, ip.add(len - 16), op.add((len - 16) * 2));
+        }
+    } else if len >= 8 {
+        // Two overlapping 8-byte loads; each 16-character half is stored at its own offset.
+        let v = vcombine_u8(vld1_u8(ip), vld1_u8(ip.add(len - 8)));
+        let (hi, lo) = chars(table, v);
+        let z = vzipq_u8(hi, lo);
+        vst1q_u8(op, z.0);
+        vst1q_u8(op.add((len - 8) * 2), z.1);
+    } else if len >= 4 {
+        // Two overlapping 4-byte loads; each 8-character half is stored at its own offset.
+        let first = ip.cast::<u32>().read_unaligned() as u64;
+        let last = ip.add(len - 4).cast::<u32>().read_unaligned() as u64;
+        let v = vcreate_u8(first | (last << 32));
+        let (hi, lo) = chars(table, vcombine_u8(v, v));
+        let z = vreinterpretq_u64_u8(vzip1q_u8(hi, lo));
+        op.cast::<u64>().write_unaligned(vgetq_lane_u64::<0>(z));
+        op.add((len - 4) * 2)
+            .cast::<u64>()
+            .write_unaligned(vgetq_lane_u64::<1>(z));
+    } else {
+        generic::encode::<UPPER>(input, output);
+    }
+}
 
-        // Lookup the corresponding ASCII hex digit for each nibble.
-        lo = vqtbl1q_u8(hex_table, lo);
-        hi = vqtbl1q_u8(hex_table, hi);
+/// Returns the hex characters of the high and low nibbles of each byte in `v`.
+#[inline(always)]
+unsafe fn chars(table: uint8x16_t, v: uint8x16_t) -> (uint8x16_t, uint8x16_t) {
+    let hi = vqtbl1q_u8(table, vshrq_n_u8(v, 4));
+    let lo = vqtbl1q_u8(table, vandq_u8(v, vdupq_n_u8(0x0F)));
+    (hi, lo)
+}
 
-        // Interleave the nibbles ([hi[0], lo[0], hi[1], lo[1], ...]).
-        vzipq_u8(hi, lo)
-    });
+/// Encodes 16 bytes at `ip` to 32 characters at `op`.
+#[inline(always)]
+unsafe fn encode_16(table: uint8x16_t, ip: *const u8, op: *mut u8) {
+    let (hi, lo) = chars(table, vld1q_u8(ip));
+    let z = vzipq_u8(hi, lo);
+    vst1q_u8(op, z.0);
+    vst1q_u8(op.add(16), z.1);
 }
 
 #[inline]
