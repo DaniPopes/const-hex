@@ -133,7 +133,6 @@ pub(crate) const fn check(mut input: &[u8]) -> bool {
 
 const ONES: u64 = 0x0101_0101_0101_0101;
 const HIGH: u64 = ONES * 0x80;
-
 /// Returns the high bit of each byte of `x` that is not an ASCII hex digit.
 const fn check_u64_mask(x: u64) -> u64 {
     // Clear the high bits so that the additions below cannot carry between bytes.
@@ -146,7 +145,6 @@ const fn check_u64_mask(x: u64) -> u64 {
     let valid = (ge0 & !gt9) | (gea & !gtf);
     (x | !valid) & HIGH
 }
-
 /// Decodes 8 valid hex characters into 4 bytes.
 const fn decode_u64(x: u64) -> u32 {
     // '0'..='9' -> 0..=9; 'A'..='F' and 'a'..='f' have bit 6 set -> (x & 0xF) + 9.
