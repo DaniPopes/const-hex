@@ -4,6 +4,7 @@ use super::generic;
 use crate::{Output, get_chars_table};
 use core::arch::aarch64::*;
 use core::mem::MaybeUninit;
+use core::ptr;
 
 pub(crate) const USE_CHECK_FN: bool = false;
 
@@ -56,20 +57,7 @@ pub(crate) fn check(input: &[u8]) -> bool {
     unsafe { check_neon(input) }
 }
 
-/// `VALID[i]` is `0xFF` if `b'0' + i` is a hex digit. Indices past the table give 0.
-const VALID: [u8; 64] = {
-    let mut table = [0; 64];
-    let mut i = 0;
-    while i < 64 {
-        if crate::HEX_DECODE_LUT[b'0' as usize + i] != crate::NIL {
-            table[i] = 0xFF;
-        }
-        i += 1;
-    }
-    table
-};
-
-/// `NIB[i]` is `0x10 | nibble` if `b'0' + i` is a hex digit, else 0, like `VALID`.
+/// `NIB[i]` is `0x10 | nibble` if `b'0' + i` is a hex digit, else 0.
 const NIB: [u8; 64] = {
     let mut table = [0; 64];
     let mut i = 0;
@@ -83,6 +71,15 @@ const NIB: [u8; 64] = {
     table
 };
 
+/// Converts ASCII hex to `0x10 | nibble`; any other byte becomes 0.
+///
+/// `vqtbl4q_u8` gives 0 for indices past the table, so bytes outside `'0'..='o'` map to 0.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn nibbles(v: uint8x16_t) -> uint8x16_t {
+    vqtbl4q_u8(vld1q_u8_x4(NIB.as_ptr()), vsubq_u8(v, vdupq_n_u8(b'0')))
+}
+
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
     let len = input.len();
@@ -91,55 +88,45 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
     if len < 16 {
         if len >= 8 {
             let v = vcombine_u8(vld1_u8(ptr), vld1_u8(ptr.add(len - 8)));
-            vminvq_u8(valid_neon(v)) == 0xFF
+            vminvq_u8(nibbles(v)) != 0
         } else if len >= 4 {
             let first = ptr.cast::<u32>().read_unaligned() as u64;
             let last = ptr.add(len - 4).cast::<u32>().read_unaligned() as u64;
             let v = vcreate_u8(first | (last << 32));
-            vminvq_u8(valid_neon(vcombine_u8(v, v))) == 0xFF
+            vminvq_u8(nibbles(vcombine_u8(v, v))) != 0
         } else {
             generic::check(input)
         }
     } else if len >= 64 {
-        if !input.chunks_exact(64).all(|chunk| valid_64(chunk.as_ptr())) {
+        if !input.chunks_exact(64).all(|chunk| check_64(chunk.as_ptr())) {
             return false;
         }
         // Re-check the last 64 bytes, overlapping what was already checked.
-        len % 64 == 0 || valid_64(ptr.add(len - 64))
+        len % 64 == 0 || check_64(ptr.add(len - 64))
     } else if len > 32 {
-        let first = vandq_u8(valid_neon(vld1q_u8(ptr)), valid_neon(vld1q_u8(ptr.add(16))));
-        let last = vandq_u8(
-            valid_neon(vld1q_u8(ptr.add(len - 32))),
-            valid_neon(vld1q_u8(ptr.add(len - 16))),
+        let first = vminq_u8(nibbles(vld1q_u8(ptr)), nibbles(vld1q_u8(ptr.add(16))));
+        let last = vminq_u8(
+            nibbles(vld1q_u8(ptr.add(len - 32))),
+            nibbles(vld1q_u8(ptr.add(len - 16))),
         );
-        vminvq_u8(vandq_u8(first, last)) == 0xFF
+        vminvq_u8(vminq_u8(first, last)) != 0
     } else {
-        let first = valid_neon(vld1q_u8(ptr));
-        let last = valid_neon(vld1q_u8(ptr.add(len - 16)));
-        vminvq_u8(vandq_u8(first, last)) == 0xFF
+        let first = nibbles(vld1q_u8(ptr));
+        let last = nibbles(vld1q_u8(ptr.add(len - 16)));
+        vminvq_u8(vminq_u8(first, last)) != 0
     }
-}
-
-/// Per-byte validity mask: `0xFF` for hex digits, `0x00` otherwise.
-#[inline]
-#[target_feature(enable = "neon")]
-unsafe fn valid_neon(chunk: uint8x16_t) -> uint8x16_t {
-    vqtbl4q_u8(
-        vld1q_u8_x4(VALID.as_ptr()),
-        vsubq_u8(chunk, vdupq_n_u8(b'0')),
-    )
 }
 
 /// Checks 64 bytes.
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn valid_64(ptr: *const u8) -> bool {
-    let a = vandq_u8(valid_neon(vld1q_u8(ptr)), valid_neon(vld1q_u8(ptr.add(16))));
-    let b = vandq_u8(
-        valid_neon(vld1q_u8(ptr.add(32))),
-        valid_neon(vld1q_u8(ptr.add(48))),
+unsafe fn check_64(ptr: *const u8) -> bool {
+    let a = vminq_u8(nibbles(vld1q_u8(ptr)), nibbles(vld1q_u8(ptr.add(16))));
+    let b = vminq_u8(
+        nibbles(vld1q_u8(ptr.add(32))),
+        nibbles(vld1q_u8(ptr.add(48))),
     );
-    vminvq_u8(vandq_u8(a, b)) == 0xFF
+    vminvq_u8(vminq_u8(a, b)) != 0
 }
 
 /// Single-pass hex decode with validation.
@@ -184,13 +171,6 @@ unsafe fn decode_checked_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
     } else {
         generic::decode_checked(input, output)
     }
-}
-
-/// Converts ASCII hex to `0x10 | nibble`; any other byte becomes 0.
-#[inline]
-#[target_feature(enable = "neon")]
-unsafe fn nibbles(v: uint8x16_t) -> uint8x16_t {
-    vqtbl4q_u8(vld1q_u8_x4(NIB.as_ptr()), vsubq_u8(v, vdupq_n_u8(b'0')))
 }
 
 /// Loads 32 characters as the high and low characters of each pair.
@@ -247,14 +227,16 @@ unsafe fn decode_16(ip: *const u8, op: *mut u8) -> bool {
 #[inline]
 #[target_feature(enable = "neon")]
 unsafe fn decode_8(ip: *const u8, op: *mut u8) -> bool {
-    let v = vcreate_u8(ip.cast::<u64>().read_unaligned());
+    let v = vld1_u8(ip);
     let n = nibbles(vcombine_u8(vuzp1_u8(v, v), vuzp2_u8(v, v)));
     if vminvq_u8(n) == 0 {
         return false;
     }
     let bytes = vsli_n_u8(vget_high_u8(n), vget_low_u8(n), 4);
-    op.cast::<u32>()
-        .write_unaligned(vget_lane_u32::<0>(vreinterpret_u32_u8(bytes)));
+    // Store through memory, since lane order differs from byte order on big-endian.
+    let mut tmp = [0; 8];
+    vst1_u8(tmp.as_mut_ptr(), bytes);
+    ptr::copy_nonoverlapping(tmp.as_ptr(), op, 4);
     true
 }
 
