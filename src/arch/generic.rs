@@ -88,6 +88,40 @@ pub(crate) unsafe fn encode_one_unaligned_chunk<const UPPER: bool, T: Copy, U: C
 /// Default check function.
 #[inline]
 pub(crate) const fn check(mut input: &[u8]) -> bool {
+    while let &[
+        a,
+        b,
+        c,
+        d,
+        e,
+        f,
+        g,
+        h,
+        a2,
+        b2,
+        c2,
+        d2,
+        e2,
+        f2,
+        g2,
+        h2,
+        ref rest @ ..,
+    ] = input
+    {
+        if check_u64_mask(u64::from_ne_bytes([a, b, c, d, e, f, g, h]))
+            | check_u64_mask(u64::from_ne_bytes([a2, b2, c2, d2, e2, f2, g2, h2]))
+            != 0
+        {
+            return false;
+        }
+        input = rest;
+    }
+    if let &[a, b, c, d, e, f, g, h, ref rest @ ..] = input {
+        if check_u64_mask(u64::from_ne_bytes([a, b, c, d, e, f, g, h])) != 0 {
+            return false;
+        }
+        input = rest;
+    }
     while let &[byte, ref rest @ ..] = input {
         if HEX_DECODE_LUT[byte as usize] == NIL {
             return false;
@@ -95,6 +129,22 @@ pub(crate) const fn check(mut input: &[u8]) -> bool {
         input = rest;
     }
     true
+}
+
+const ONES: u64 = 0x0101_0101_0101_0101;
+const HIGH: u64 = ONES * 0x80;
+
+/// Returns the high bit of each byte of `x` that is not an ASCII hex digit.
+const fn check_u64_mask(x: u64) -> u64 {
+    // Clear the high bits so that the additions below cannot carry between bytes.
+    let x7 = x & !HIGH;
+    let ge0 = x7 + ONES * (0x80 - b'0' as u64);
+    let gt9 = x7 + ONES * (0x7F - b'9' as u64);
+    let l = x7 | (ONES * 0x20);
+    let gea = l + ONES * (0x80 - b'a' as u64);
+    let gtf = l + ONES * (0x7F - b'f' as u64);
+    let valid = (ge0 & !gt9) | (gea & !gtf);
+    (x | !valid) & HIGH
 }
 
 /// Runs the given check function on unaligned chunks of `T` in `input`, with the remainder passed
