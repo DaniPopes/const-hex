@@ -311,11 +311,14 @@ fn encode_simd_boundaries() {
 fn decode_simd_boundaries() {
     let sizes = (1..=70).chain([95, 96, 97, 127, 128, 129]);
     for size in sizes {
-        let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
+        // Multiplying spreads the bytes over every high and low nibble.
+        let bytes: Vec<u8> = (0..size).map(|i| (i as u8).wrapping_mul(37)).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
 
         let decoded = const_hex::decode(&hex).unwrap();
         assert_eq!(decoded, bytes, "decode mismatch at size {size}");
+        let decoded = const_hex::decode(hex.to_uppercase()).unwrap();
+        assert_eq!(decoded, bytes, "uppercase decode mismatch at size {size}");
 
         let mut output = vec![0u8; size];
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
