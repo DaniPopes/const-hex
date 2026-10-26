@@ -272,10 +272,11 @@ fn check_simd_boundaries() {
     // Miri is slow; test only the edges of the SIMD paths.
     let sizes = if cfg!(miri) {
         vec![
-            1, 3, 4, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 79, 80, 127, 128, 129, 255, 256, 257,
+            1, 3, 4, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 79, 80, 127, 128, 129, 255, 256,
+            257, 384,
         ]
     } else {
-        (1..=260).collect()
+        (1..=260).chain([384]).collect()
     };
     for size in sizes {
         let valid_lower: String = "a".repeat(size);
