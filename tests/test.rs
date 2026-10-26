@@ -311,7 +311,7 @@ fn encode_simd_boundaries() {
 fn decode_simd_boundaries() {
     // Miri is slow; these sizes still reach every decode path.
     let sizes: Vec<usize> = if cfg!(miri) {
-        vec![1, 4, 8, 16, 17, 32, 33, 64, 65]
+        vec![1, 4, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129]
     } else {
         (1..=70).chain([95, 96, 97, 127, 128, 129]).collect()
     };
