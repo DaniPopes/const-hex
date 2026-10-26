@@ -13,7 +13,8 @@ pub(crate) const USE_CHECK_FN: bool = false;
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
 pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
-    // On 32-bit targets `u64` is emulated, and this loop is slower than the per-byte loop.
+    // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
+    // per-byte loop.
     if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
         // Encodes 4 bytes into 8 hex digits in memory order.
         while let &[a, b, c, d, ref rest @ ..] = input {
