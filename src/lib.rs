@@ -11,7 +11,7 @@
 //! extending the API with [const-eval](const_encode), a
 //! [const-generics formatting buffer](Buffer), similar to [`itoa`]'s, and more.
 //!
-//! _Version requirement: rustc 1.64+_
+//! _Version requirement: rustc 1.85+_
 //!
 //! [`itoa`]: https://docs.rs/itoa/latest/itoa/struct.Buffer.html
 //! [`hex`]: https://docs.rs/hex
