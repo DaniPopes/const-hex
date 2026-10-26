@@ -113,14 +113,7 @@ unsafe fn encode_chunk_ssse3<const UPPER: bool>(input: __m128i) -> [__m128i; 2] 
     [_mm_shuffle_epi8(lut, out1), _mm_shuffle_epi8(lut, out2)]
 }
 
-/// Hex check using a nibble lookup: a byte is valid iff `LO[b & 0xf] & HI[b >> 4] != 0`.
-///
-/// Bit 0 of `HI` marks the digit row (high nibble 3) and bit 1 the letter rows (high nibbles 4
-/// and 6). `LO` has bit 0 set for low nibbles 0..=9 and bit 1 for 1..=6. Bytes `>= 0x80` index
-/// `LO` with a set top bit, which `pshufb` maps to 0, so they are never valid.
-///
-/// Based on Muła & Langdale:
-/// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+/// Checks that every byte is an ASCII hex digit.
 #[inline]
 pub(crate) fn check(input: &[u8]) -> bool {
     match () {
@@ -130,14 +123,17 @@ pub(crate) fn check(input: &[u8]) -> bool {
     }
 }
 
+/// Hex check using a nibble lookup: a byte is valid iff `LO[b & 0xf] & HI[b >> 4] != 0`.
+///
+/// Bit 0 of `HI` marks the digit row (high nibble 3) and bit 1 the letter rows (high nibbles 4
+/// and 6). `LO` has bit 0 set for low nibbles 0..=9 and bit 1 for 1..=6. Bytes `>= 0x80` index
+/// `LO` with a set top bit, which `pshufb` maps to 0, so they are never valid.
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn check_avx2(input: &[u8]) -> bool {
-    #[rustfmt::skip]
     let lo_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
         1, 3, 3, 3, 3, 3, 3, 1, 1, 1, 0, 0, 0, 0, 0, 0,
     ));
-    #[rustfmt::skip]
     let hi_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
         0, 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ));
@@ -208,6 +204,15 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
     generic::check_unaligned_chunks(input, |c| check_chunk_sse2(c))
 }
 
+/// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
+/// then a single `cmpgt(start + len, x)` checks if `x` falls within the range.
+///
+/// - Digits '0'..'9' (0x30..0x39): bias by 0xB0 maps to -128..-119, threshold -118 (10 values).
+/// - Letters 'A'..'F' (0x41..0x46): bias by 0xC1 maps to -128..-123, threshold -122 (6 values).
+///   Case folded with 0xDF mask so 'a'..'f' is handled identically.
+///
+/// Based on Muła & Langdale:
+/// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn check_chunk_sse2(chunk: __m128i) -> bool {
