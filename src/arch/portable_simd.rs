@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use super::generic;
-use crate::{get_chars_table, Output};
+use crate::{Output, get_chars_table};
 use core::mem::MaybeUninit;
 use core::simd::prelude::*;
 
