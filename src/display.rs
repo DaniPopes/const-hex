@@ -29,23 +29,44 @@ impl<T: AsRef<[u8]>> fmt::Display for Display<T> {
 
 impl<T: AsRef<[u8]>> fmt::LowerHex for Display<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.write::<false>(f)
+        write_hex::<false>(self.0.as_ref(), f.alternate(), f)
     }
 }
 
 impl<T: AsRef<[u8]>> fmt::UpperHex for Display<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.write::<true>(f)
+        write_hex::<true>(self.0.as_ref(), f.alternate(), f)
     }
 }
 
-impl<T: AsRef<[u8]>> Display<T> {
-    fn write<const UPPER: bool>(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            f.write_str("0x")?;
-        }
-        let mut output = crate::output::FormatterOutput::new(f);
-        unsafe { crate::imp::encode::<UPPER>(self.0.as_ref(), &mut output) };
-        output.finish()
+/// Input bytes encoded per `write_str` call.
+const CHUNK_LEN: usize = 1024;
+
+/// Writes `input` as hex to `f`, with one `write_str` per chunk of `CHUNK_LEN` input bytes.
+///
+/// The `0x` prefix, if any, is written together with the first chunk.
+pub(crate) fn write_hex<const UPPER: bool>(
+    input: &[u8],
+    prefix: bool,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    if input.is_empty() {
+        return if prefix { f.write_str("0x") } else { Ok(()) };
     }
+    let mut buf = crate::impl_core::uninit_array::<u8, { 2 + CHUNK_LEN * 2 }>();
+    buf[0].write(b'0');
+    buf[1].write(b'x');
+    for (i, chunk) in input.chunks(CHUNK_LEN).enumerate() {
+        let end = 2 + chunk.len() * 2;
+        // SAFETY: `buf[2..end]` is exactly `chunk.len() * 2` bytes long.
+        unsafe { crate::imp::encode::<UPPER>(chunk, &mut buf[2..end]) };
+        let start = if prefix && i == 0 { 0 } else { 2 };
+        // SAFETY: `buf[..end]` is initialized: the prefix above and the encoded chunk.
+        // Only ASCII characters, which are valid UTF-8, have been written.
+        let s = unsafe {
+            core::str::from_utf8_unchecked(crate::impl_core::slice_assume_init(&buf[start..end]))
+        };
+        f.write_str(s)?;
+    }
+    Ok(())
 }
