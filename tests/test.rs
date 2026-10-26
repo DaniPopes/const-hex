@@ -304,14 +304,17 @@ fn check_simd_boundaries() {
     }
 }
 
-/// Inputs around every SIMD tail and chunk boundary.
+/// Sequential and pseudo-random inputs around every SIMD tail and chunk boundary.
 fn boundary_inputs() -> impl Iterator<Item = Vec<u8>> {
     (0..=65usize)
         .chain([100, 127, 128, 129, 255, 256])
-        .map(|size| {
-            (0..size)
-                .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
-                .collect()
+        .flat_map(|size| {
+            [
+                (0..size).map(|i| i as u8).collect(),
+                (0..size)
+                    .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
+                    .collect(),
+            ]
         })
 }
 

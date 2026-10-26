@@ -77,11 +77,7 @@ unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], mut output: impl Output) 
         }
     } else if len >= 16 {
         // Two overlapping 16-byte loads; each 32-character half is stored at its own offset.
-        let v = _mm256_inserti128_si256(
-            _mm256_castsi128_si256(_mm_loadu_si128(ip.cast())),
-            _mm_loadu_si128(ip.add(len - 16).cast()),
-            1,
-        );
+        let v = _mm256_loadu2_m128i(ip.add(len - 16).cast(), ip.cast());
         let [a, b] = encode_chunk_avx2::<UPPER>(v);
         _mm256_storeu_si256(op.cast(), a);
         _mm256_storeu_si256(op.add((len - 16) * 2).cast(), b);
