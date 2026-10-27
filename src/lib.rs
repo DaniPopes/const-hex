@@ -605,13 +605,46 @@ pub fn decode_to_array<T: AsRef<[u8]>, const N: usize>(input: T) -> Result<[u8; 
     decode_to_array_inner(input.as_ref())
 }
 
+/// Encodes `input` into `output`.
+///
+/// # Safety
+///
+/// `output` must be at least `2 * input.len()` bytes long.
+#[inline(always)]
+unsafe fn encode_uninit<const UPPER: bool>(input: &[u8], output: &mut [MaybeUninit<u8>]) {
+    // The x86 kernels are selected at runtime and never inlined, so call one copy compiled here.
+    // Elsewhere the kernels inline into the caller, which keeps constant-length encodes unrolled.
+    #[cfg(not(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        not(any(feature = "force-generic", feature = "portable-simd"))
+    )))]
+    return imp::encode::<UPPER>(input, output);
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        not(any(feature = "force-generic", feature = "portable-simd"))
+    ))]
+    {
+        unsafe fn lower(input: &[u8], output: &mut [MaybeUninit<u8>]) {
+            imp::encode::<false>(input, output)
+        }
+        unsafe fn upper(input: &[u8], output: &mut [MaybeUninit<u8>]) {
+            imp::encode::<true>(input, output)
+        }
+        if UPPER {
+            upper(input, output)
+        } else {
+            lower(input, output)
+        }
+    }
+}
+
 #[cfg(feature = "alloc")]
 fn encode_inner<const UPPER: bool, const PREFIX: bool>(data: &[u8]) -> String {
     let capacity = PREFIX as usize * 2 + data.len() * 2;
     let mut buf = Vec::<u8>::with_capacity(capacity);
 
     // SAFETY: `spare_capacity_mut` returns uninitialized memory which is fully
-    // written to by the prefix write and `imp::encode`, then `set_len` commits.
+    // written to by the prefix write and `encode_uninit`, then `set_len` commits.
     let mut output = &mut buf.spare_capacity_mut()[..capacity];
     if PREFIX {
         // SAFETY: `output` is long enough.
@@ -621,11 +654,11 @@ fn encode_inner<const UPPER: bool, const PREFIX: bool>(data: &[u8]) -> String {
             output = output.get_unchecked_mut(2..);
         }
     }
-    // SAFETY: `output` is long enough (data.len() * 2), `encode` fully writes all bytes,
+    // SAFETY: `output` is long enough (data.len() * 2), `encode_uninit` fully writes all bytes,
     // then `set_len` is called only after successful encode.
     // We only write ASCII bytes, which are valid UTF-8.
     unsafe {
-        imp::encode::<UPPER>(data, output);
+        encode_uninit::<UPPER>(data, output);
         buf.set_len(capacity);
         String::from_utf8_unchecked(buf)
     }
@@ -639,7 +672,7 @@ fn encode_to_slice_inner<const UPPER: bool>(
         return Err(FromHexError::InvalidStringLength);
     }
     // SAFETY: Lengths are checked above.
-    unsafe { imp::encode::<UPPER>(input, output) };
+    unsafe { encode_uninit::<UPPER>(input, impl_core::slice_as_uninit_mut(output)) };
     Ok(())
 }
 
@@ -669,22 +702,13 @@ fn decode_to_slice_inner(input: &[u8], output: &mut [MaybeUninit<u8>]) -> Result
 
 /// # Safety
 ///
-/// Assumes `output.len() == input.len() / 2`.
+/// Assumes `output.len() == input.len() / 2` and that `input.len()` is even.
 #[inline]
 unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> Result<(), FromHexError> {
     debug_assert_eq!(output.len(), input.len() / 2);
 
-    if imp::USE_CHECK_FN {
-        // Check then decode.
-        if imp::check(input) {
-            unsafe { imp::decode_unchecked(input, output) };
-            return Ok(());
-        }
-    } else {
-        // Check and decode at the same time.
-        if unsafe { imp::decode_checked(input, output) } {
-            return Ok(());
-        }
+    if unsafe { imp::decode_checked(input, output) } {
+        return Ok(());
     }
 
     Err(unsafe { invalid_hex_error(input) })

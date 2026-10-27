@@ -59,7 +59,7 @@ pub(crate) fn write_hex<const UPPER: bool>(
     for (i, chunk) in input.chunks(CHUNK_LEN).enumerate() {
         let end = 2 + chunk.len() * 2;
         // SAFETY: `buf[2..end]` is exactly `chunk.len() * 2` bytes long.
-        unsafe { crate::imp::encode::<UPPER>(chunk, &mut buf[2..end]) };
+        unsafe { crate::encode_uninit::<UPPER>(chunk, &mut buf[2..end]) };
         let start = if prefix && i == 0 { 0 } else { 2 };
         // SAFETY: `buf[..end]` is initialized: the prefix above and the encoded chunk.
         // Only ASCII characters, which are valid UTF-8, have been written.

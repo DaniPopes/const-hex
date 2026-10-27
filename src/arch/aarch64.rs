@@ -1,11 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use super::generic;
+use super::generic::{self, Vector};
 use crate::{Output, get_chars_table};
 use core::arch::aarch64::*;
 use core::mem::MaybeUninit;
-
-pub(crate) const USE_CHECK_FN: bool = false;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -31,20 +29,9 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl Output) {
-    // Load table.
-    let hex_table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
-
-    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: uint8x16_t| {
-        // Load input bytes and mask to nibbles.
-        let mut lo = vandq_u8(chunk, vdupq_n_u8(0x0F));
-        let mut hi = vshrq_n_u8(chunk, 4);
-
-        // Lookup the corresponding ASCII hex digit for each nibble.
-        lo = vqtbl1q_u8(hex_table, lo);
-        hi = vqtbl1q_u8(hex_table, hi);
-
-        // Interleave the nibbles ([hi[0], lo[0], hi[1], lo[1], ...]).
-        vzipq_u8(hi, lo)
+    // Finishing in the loop keeps the final step off the hot path for multiples of the chunk size.
+    generic::encode_unaligned_chunks::<UPPER, 1, true, _>(input, output, |chunk: uint8x16_t| {
+        generic::encode_kernel::<UPPER, _>(chunk)
     });
 }
 
@@ -56,35 +43,51 @@ pub(crate) fn check(input: &[u8]) -> bool {
     unsafe { check_neon(input) }
 }
 
+/// `NIB[i]` is `0x10 | nibble` if `b'0' + i` is a hex digit, else 0.
+const NIB: [u8; 64] = {
+    let mut table = [0; 64];
+    let mut i = 0;
+    while i < 64 {
+        let nibble = crate::HEX_DECODE_LUT[b'0' as usize + i];
+        if nibble != crate::NIL {
+            table[i] = 0x10 | nibble;
+        }
+        i += 1;
+    }
+    table
+};
+
+/// Converts ASCII hex to `0x10 | nibble`; any other byte becomes 0.
+///
+/// A 64-entry table lookup replaces the arithmetic of the generic kernels: `vqtbl4q_u8` gives 0
+/// for indices past the table, so bytes outside `'0'..='o'` map to 0.
+#[inline]
 #[target_feature(enable = "neon")]
-pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
-    generic::check_unaligned_chunks(input, |chunk: uint8x16_t| {
-        let ge0 = vcgeq_u8(chunk, vdupq_n_u8(b'0'));
-        let le9 = vcleq_u8(chunk, vdupq_n_u8(b'9'));
-        let valid_digit = vandq_u8(ge0, le9);
-
-        let geua = vcgeq_u8(chunk, vdupq_n_u8(b'A'));
-        let leuf = vcleq_u8(chunk, vdupq_n_u8(b'F'));
-        let valid_upper = vandq_u8(geua, leuf);
-
-        let gela = vcgeq_u8(chunk, vdupq_n_u8(b'a'));
-        let lelf = vcleq_u8(chunk, vdupq_n_u8(b'f'));
-        let valid_lower = vandq_u8(gela, lelf);
-
-        let valid_letter = vorrq_u8(valid_lower, valid_upper);
-        let valid_mask = vorrq_u8(valid_digit, valid_letter);
-        vminvq_u8(valid_mask) == 0xFF
-    })
+unsafe fn nibbles(chunk: uint8x16_t) -> uint8x16_t {
+    vqtbl4q_u8(vld1q_u8_x4(NIB.as_ptr()), vsubq_u8(chunk, vdupq_n_u8(b'0')))
 }
 
-/// Single-pass hex decode with validation using Muła & Langdale's Algorithm #3.
+#[target_feature(enable = "neon")]
+pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
+    generic::check_unaligned_chunks(
+        input,
+        |chunk| nibbles(chunk),
+        |a, b| vminq_u8(a, b),
+        // A zero byte marks an invalid character.
+        |n| vminvq_u8(n) != 0,
+    )
+}
+
+/// Single-pass hex decode with validation.
 ///
-/// Converts ASCII hex to nibble values and validates simultaneously:
-/// - Digits '0'..'9' → 0..9, letters 'A'..'F'/'a'..'f' → 10..15 via saturation arithmetic.
-/// - Invalid bytes produce values > 15, detected via `vqaddq_u8(nibble, 112)` setting the MSB.
-/// - Nibble pairs are merged with `vuzpq_u8` deinterleave + `(hi << 4) | lo`.
+/// Characters are looked up in a table that gives `0x10 | nibble` for hex digits and 0 otherwise,
+/// so a zero byte marks an invalid character. Pairs are merged with `vsliq_n_u8`, which drops the
+/// marker bit.
 ///
-/// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even, because the
+/// tails overlap on hex pairs.
 #[inline]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     if cfg!(miri) || !has_neon() {
@@ -95,65 +98,56 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
 
 #[target_feature(enable = "neon")]
 unsafe fn decode_checked_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
-    debug_assert_eq!(output.len(), input.len() / 2);
-
-    let add_c6 = vdupq_n_u8(0xC6); // 0xFF - b'9'
-    let six = vdupq_n_u8(6);
-    let f0 = vdupq_n_u8(0xF0);
-    let df = vdupq_n_u8(0xDF);
-    let big_a = vdupq_n_u8(b'A');
-    let ten = vdupq_n_u8(10);
-    let check_bias = vdupq_n_u8(112); // 127 - 15
-
-    generic::decode_checked_unaligned_chunks(input, output, |[v0, v1]: [uint8x16_t; 2]| {
-        // Digits '0'..'9' → 0..9, others > 15.
-        let d0 = vsubq_u8(vqsubq_u8(vaddq_u8(v0, add_c6), six), f0);
-        let d1 = vsubq_u8(vqsubq_u8(vaddq_u8(v1, add_c6), six), f0);
-
-        // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
-        let a0 = vqaddq_u8(vsubq_u8(vandq_u8(v0, df), big_a), ten);
-        let a1 = vqaddq_u8(vsubq_u8(vandq_u8(v1, df), big_a), ten);
-
-        // Valid nibble wins (0..15), invalid stays > 15.
-        let n0 = vminq_u8(d0, a0);
-        let n1 = vminq_u8(d1, a1);
-
-        // Validate: saturating add sets MSB if nibble > 15.
-        let c = vorrq_u8(vqaddq_u8(n0, check_bias), vqaddq_u8(n1, check_bias));
-        if vmaxvq_u8(c) > 0x7F {
-            return None;
-        }
-
-        // Merge nibble pairs.
-        let uz = vuzpq_u8(n0, n1);
-        Some(vorrq_u8(vshlq_n_u8(uz.0, 4), uz.1))
-    })
+    generic::decode_checked_unaligned_chunks(
+        input,
+        output,
+        |chunk| nibbles(chunk),
+        |a, b| vminq_u8(a, b),
+        |n| vminvq_u8(n) != 0,
+        |a, b| uint8x16_t::pack(a, b),
+    )
 }
 
-#[inline]
-pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-    if cfg!(miri) || !has_neon() {
-        return generic::decode_unchecked(input, output);
+generic::impl_vector! {
+    uint8x16_t;
+    and = vandq_u8,
+    or = vorrq_u8,
+    sub = vsubq_u8,
+    saturating_add = vqaddq_u8,
+    saturating_sub = vqsubq_u8,
+    min = vminq_u8;
+
+    #[inline(always)]
+    unsafe fn splat(x: u8) -> Self {
+        vdupq_n_u8(x)
     }
-    decode_unchecked_neon(input, output);
-}
 
-#[target_feature(enable = "neon")]
-unsafe fn decode_unchecked_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-    generic::decode_unchecked_unaligned_chunks(input, output, |[v0, v1]: [uint8x16_t; 2]| {
-        let n0 = unhex_neon(v0);
-        let n1 = unhex_neon(v1);
-        let uz = vuzpq_u8(n0, n1);
-        vorrq_u8(vshlq_n_u8(uz.0, 4), uz.1)
-    });
-}
+    #[inline(always)]
+    unsafe fn shr4(self) -> Self {
+        vshrq_n_u8::<4>(self)
+    }
 
-/// Converts ASCII hex bytes to nibble values: `(x >> 6) * 9 + (x & 0x0F)`.
-#[inline]
-#[target_feature(enable = "neon")]
-unsafe fn unhex_neon(x: uint8x16_t) -> uint8x16_t {
-    let sr6 = vshrq_n_u8(x, 6);
-    let low = vandq_u8(x, vdupq_n_u8(0x0F));
-    let mul9 = vmulq_u8(sr6, vdupq_n_u8(9));
-    vaddq_u8(mul9, low)
+    #[inline(always)]
+    unsafe fn hex_digits<const UPPER: bool>(self) -> Self {
+        vqtbl1q_u8(vld1q_u8(get_chars_table::<UPPER>().as_ptr()), self)
+    }
+
+    #[inline(always)]
+    unsafe fn interleave(a: Self, b: Self) -> [Self; 2] {
+        let zipped = vzipq_u8(a, b);
+        [zipped.0, zipped.1]
+    }
+
+    /// Also accepts bytes above 15: `vsliq_n_u8::<4>` shifts the high nibbles left by four and keeps
+    /// only the low four bits of each low nibble, so the marker bit of `nibbles` drops out, as
+    /// [`decode_checked_neon`] needs.
+    #[inline(always)]
+    unsafe fn pack(a: Self, b: Self) -> Self {
+        vsliq_n_u8::<4>(vuzp2q_u8(a, b), vuzp1q_u8(a, b))
+    }
+
+    #[inline(always)]
+    unsafe fn is_zero(self) -> bool {
+        vmaxvq_u8(self) == 0
+    }
 }
