@@ -65,7 +65,13 @@ generic::impl_vector! {
 
     #[inline(always)]
     unsafe fn hex_digits<const UPPER: bool>(self) -> Self {
-        u8x16_swizzle(v128_load(get_chars_table::<UPPER>().as_ptr().cast()), self)
+        let table = v128_load(get_chars_table::<UPPER>().as_ptr().cast());
+        // The indices are nibbles (0..=15), so the relaxed swizzle's implementation-defined
+        // out-of-range behavior never applies and it equals `u8x16_swizzle`.
+        #[cfg(target_feature = "relaxed-simd")]
+        return i8x16_relaxed_swizzle(table, self);
+        #[cfg(not(target_feature = "relaxed-simd"))]
+        u8x16_swizzle(table, self)
     }
 
     #[inline(always)]

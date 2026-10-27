@@ -65,6 +65,13 @@ jobs:
         if: matrix.rust == 'nightly'
       - run: cargo bench --no-run
 
+      # `relaxed-simd` has no runtime detection, so it needs its own run.
+      - name: Enable relaxed-simd
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Ctarget-feature=+relaxed-simd >> $GITHUB_ENV
+        if: matrix.target.triple == 'wasm32-wasip1'
+      - run: cargo test --features serde
+        if: matrix.target.triple == 'wasm32-wasip1'
+
       # `-Ctarget-feature=-neon` is a hard error on aarch64 since it changes the ABI.
       - name: Disable target feature
         run: echo RUSTFLAGS=${RUSTFLAGS_BAK}\ -Ctarget-feature=-${{ matrix.target.feature }} >> $GITHUB_ENV
