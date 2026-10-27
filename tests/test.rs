@@ -379,6 +379,52 @@ fn decode_simd_boundaries() {
 }
 
 #[test]
+#[cfg(feature = "alloc")]
+fn decode_all_nibbles_simd_boundaries() {
+    for size in [1, 7, 8, 16, 17, 32, 33, 64, 65, 129] {
+        // Multiplying spreads the bytes over every high and low nibble from size 64 up.
+        let bytes: Vec<u8> = (0..size).map(|i| (i as u8).wrapping_mul(37)).collect();
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+
+        assert_eq!(
+            const_hex::decode(&hex).unwrap(),
+            bytes,
+            "lower, size {size}"
+        );
+        assert_eq!(
+            const_hex::decode(hex.to_uppercase()).unwrap(),
+            bytes,
+            "upper, size {size}"
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "alloc")]
+fn decode_all_invalid_chars() {
+    let sizes: &[usize] = if cfg!(miri) {
+        &[1, 17]
+    } else {
+        &[1, 4, 8, 16, 32, 64, 65]
+    };
+    for &size in sizes {
+        let hex = "1".repeat(size * 2);
+        for pos in [0, size - 1, size, size * 2 - 1] {
+            for c in 0u8..=255 {
+                let mut input = hex.clone().into_bytes();
+                input[pos] = c;
+                let is_valid = c.is_ascii_hexdigit();
+                assert_eq!(
+                    const_hex::decode(&input).is_ok(),
+                    is_valid,
+                    "size {size} pos {pos} char 0x{c:02x}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn encode_to_slice_simd_boundaries() {
     for input in boundary_inputs() {
         let size = input.len();
@@ -406,6 +452,58 @@ fn encode_to_slice_simd_boundaries() {
                 "overrun at size {size}, upper: {upper}"
             );
         }
+    }
+}
+
+/// `Buffer::format` and `display` encode into uninitialized buffers.
+#[test]
+fn encode_simd_boundaries_buffer_display() {
+    fn buffer<const N: usize>(input: &[u8]) {
+        let input: &[u8; N] = input.try_into().unwrap();
+        let mut buffer = Buffer::<N, false>::new();
+        assert_eq!(&*buffer.format(input), hex::encode(input), "size {N}");
+        assert_eq!(
+            &*buffer.format_upper(input),
+            hex::encode_upper(input),
+            "size {N}"
+        );
+
+        // The prefix offsets the encoded output by two bytes.
+        let mut buffer = Buffer::<N, true>::new();
+        assert_eq!(
+            &*buffer.format(input),
+            format!("0x{}", hex::encode(input)),
+            "size {N}, prefixed"
+        );
+    }
+
+    macro_rules! buffers {
+        ($input:expr; $($n:literal)*) => {
+            match $input.len() {
+                $($n => buffer::<$n>($input),)*
+                size => unreachable!("size {size}"),
+            }
+        };
+    }
+
+    for input in boundary_inputs() {
+        let size = input.len();
+        // Miri is slow; sizes up to 33 still reach the 16- and 32-byte tails.
+        if cfg!(miri) && size > 33 {
+            continue;
+        }
+        buffers!(&input; 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 100 127 128 129 255 256);
+
+        assert_eq!(
+            format!("{}", const_hex::display(&input)),
+            hex::encode(&input),
+            "size {size}"
+        );
+        assert_eq!(
+            format!("{:#X}", const_hex::display(&input)),
+            format!("0x{}", hex::encode_upper(&input)),
+            "size {size}"
+        );
     }
 }
 
