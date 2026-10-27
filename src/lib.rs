@@ -696,22 +696,13 @@ fn decode_to_slice_inner(input: &[u8], output: &mut [MaybeUninit<u8>]) -> Result
 
 /// # Safety
 ///
-/// Assumes `output.len() == input.len() / 2`.
+/// Assumes `output.len() == input.len() / 2` and that `input.len()` is even.
 #[inline]
 unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> Result<(), FromHexError> {
     debug_assert_eq!(output.len(), input.len() / 2);
 
-    if imp::USE_CHECK_FN {
-        // Check then decode.
-        if imp::check(input) {
-            unsafe { imp::decode_unchecked(input, output) };
-            return Ok(());
-        }
-    } else {
-        // Check and decode at the same time.
-        if unsafe { imp::decode_checked(input, output) } {
-            return Ok(());
-        }
+    if unsafe { imp::decode_checked(input, output) } {
+        return Ok(());
     }
 
     Err(unsafe { invalid_hex_error(input) })

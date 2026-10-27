@@ -102,6 +102,9 @@ jobs:
             rustflags: -Ctarget-feature=+avx2
           # Big-endian.
           - target: s390x-unknown-linux-gnu
+          # Big-endian with the SIMD helpers, which the generic backend does not use.
+          - target: s390x-unknown-linux-gnu
+            flags: -Fnightly,portable-simd
     env:
       MIRIFLAGS: -Zmiri-strict-provenance
       RUSTFLAGS: -Dwarnings ${{ matrix.rustflags }}

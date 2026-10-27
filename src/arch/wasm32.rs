@@ -5,15 +5,14 @@ use crate::{Output, get_chars_table};
 use core::arch::wasm32::*;
 use core::mem::MaybeUninit;
 
-pub(crate) const USE_CHECK_FN: bool = false;
-
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
     // Load table.
     let hex_table = v128_load(get_chars_table::<UPPER>().as_ptr().cast());
 
-    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: v128| {
+    // A single shared final step keeps `encode` inlinable into fixed-size callers.
+    generic::encode_unaligned_chunks::<UPPER, 1, false, _, _>(input, output, |chunk: v128| {
         // Load input bytes and mask to nibbles.
         let mut lo = v128_and(chunk, u8x16_splat(0x0F));
         let mut hi = u8x16_shr(chunk, 4);
@@ -52,23 +51,27 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) fn check(input: &[u8]) -> bool {
-    generic::check_unaligned_chunks(input, |chunk: v128| {
-        let ge0 = u8x16_ge(chunk, u8x16_splat(b'0'));
-        let le9 = u8x16_le(chunk, u8x16_splat(b'9'));
-        let valid_digit = v128_and(ge0, le9);
+    generic::check_unaligned_chunks(
+        input,
+        |chunk: v128| {
+            let ge0 = u8x16_ge(chunk, u8x16_splat(b'0'));
+            let le9 = u8x16_le(chunk, u8x16_splat(b'9'));
+            let valid_digit = v128_and(ge0, le9);
 
-        let geua = u8x16_ge(chunk, u8x16_splat(b'A'));
-        let leuf = u8x16_le(chunk, u8x16_splat(b'F'));
-        let valid_upper = v128_and(geua, leuf);
+            let geua = u8x16_ge(chunk, u8x16_splat(b'A'));
+            let leuf = u8x16_le(chunk, u8x16_splat(b'F'));
+            let valid_upper = v128_and(geua, leuf);
 
-        let gela = u8x16_ge(chunk, u8x16_splat(b'a'));
-        let lelf = u8x16_le(chunk, u8x16_splat(b'f'));
-        let valid_lower = v128_and(gela, lelf);
+            let gela = u8x16_ge(chunk, u8x16_splat(b'a'));
+            let lelf = u8x16_le(chunk, u8x16_splat(b'f'));
+            let valid_lower = v128_and(gela, lelf);
 
-        let valid_letter = v128_or(valid_lower, valid_upper);
-        let valid = v128_or(valid_digit, valid_letter);
-        u8x16_all_true(valid)
-    })
+            let valid_letter = v128_or(valid_lower, valid_upper);
+            v128_or(valid_digit, valid_letter)
+        },
+        |a, b| v128_and(a, b),
+        |mask| u8x16_all_true(mask),
+    )
 }
 
 /// Single-pass hex decode with validation using Muła & Langdale's Algorithm #3.
@@ -79,6 +82,11 @@ pub(crate) fn check(input: &[u8]) -> bool {
 /// - Nibble pairs are merged with `u8x16_shuffle` deinterleave + `(hi << 4) | lo`.
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even, because the
+/// tails overlap on hex pairs.
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
@@ -92,57 +100,29 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
     let ten = u8x16_splat(10);
     let check_bias = u8x16_splat(112); // 127 - 15
 
-    generic::decode_checked_unaligned_chunks(input, output, |[v0, v1]: [v128; 2]| {
-        // Digits '0'..'9' → 0..9, others > 15.
-        let d0 = u8x16_sub(u8x16_sub_sat(u8x16_add(v0, add_c6), six), f0);
-        let d1 = u8x16_sub(u8x16_sub_sat(u8x16_add(v1, add_c6), six), f0);
+    generic::decode_checked_unaligned_chunks(
+        input,
+        output,
+        |v: v128| {
+            // Digits '0'..'9' → 0..9, others > 15.
+            let d = u8x16_sub(u8x16_sub_sat(u8x16_add(v, add_c6), six), f0);
 
-        // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
-        let a0 = u8x16_add_sat(u8x16_sub(v128_and(v0, df), big_a), ten);
-        let a1 = u8x16_add_sat(u8x16_sub(v128_and(v1, df), big_a), ten);
+            // Letters 'A'..'F'/'a'..'f' → 10..15, others > 15.
+            let a = u8x16_add_sat(u8x16_sub(v128_and(v, df), big_a), ten);
 
-        // Valid nibble wins (0..15), invalid stays > 15.
-        let n0 = u8x16_min(d0, a0);
-        let n1 = u8x16_min(d1, a1);
-
-        // Validate: saturating add sets MSB if nibble > 15.
-        let c = v128_or(u8x16_add_sat(n0, check_bias), u8x16_add_sat(n1, check_bias));
-        if u8x16_bitmask(c) != 0 {
-            return None;
-        }
-
-        // Deinterleave and merge nibble pairs.
-        #[rustfmt::skip]
-        let hi = u8x16_shuffle::<0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30>(n0, n1);
-        #[rustfmt::skip]
-        let lo = u8x16_shuffle::<1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31>(n0, n1);
-        Some(v128_or(u8x16_shl(hi, 4), lo))
-    })
-}
-
-#[inline]
-#[target_feature(enable = "simd128")]
-pub(crate) unsafe fn decode_unchecked(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-    generic::decode_unchecked_unaligned_chunks(input, output, |[v0, v1]: [v128; 2]| {
-        let n0 = unhex(v0);
-        let n1 = unhex(v1);
-
-        // Deinterleave and merge nibble pairs.
-        #[rustfmt::skip]
-        let hi = u8x16_shuffle::<0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30>(n0, n1);
-        #[rustfmt::skip]
-        let lo = u8x16_shuffle::<1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31>(n0, n1);
-        v128_or(u8x16_shl(hi, 4), lo)
-    });
-}
-
-/// Converts ASCII hex bytes to nibble values: `(x >> 6) * 9 + (x & 0x0F)`.
-#[inline]
-#[target_feature(enable = "simd128")]
-unsafe fn unhex(x: v128) -> v128 {
-    let sr6 = u8x16_shr(x, 6);
-    let low = v128_and(x, u8x16_splat(0x0F));
-    // sr6 * 9 = (sr6 << 3) + sr6 (no i8x16.mul in wasm SIMD).
-    let mul9 = u8x16_add(u8x16_shl(sr6, 3), sr6);
-    u8x16_add(mul9, low)
+            // Valid nibble wins (0..15), invalid stays > 15.
+            u8x16_min(d, a)
+        },
+        |a, b| v128_or(a, b),
+        // Saturating add sets MSB if nibble > 15.
+        |nibbles| u8x16_bitmask(u8x16_add_sat(nibbles, check_bias)) == 0,
+        |n0, n1| {
+            // Deinterleave and merge nibble pairs.
+            #[rustfmt::skip]
+            let hi = u8x16_shuffle::<0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30>(n0, n1);
+            #[rustfmt::skip]
+            let lo = u8x16_shuffle::<1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31>(n0, n1);
+            v128_or(u8x16_shl(hi, 4), lo)
+        },
+    )
 }
