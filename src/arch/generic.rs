@@ -225,7 +225,8 @@ pub(crate) unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
 /// encoded in one chunk built from two overlapping loads. Anything shorter is encoded with
 /// [`encode`].
 ///
-/// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`,
+/// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`, inputs
+/// shorter than two chunks use at most two overlapping chunks and skip the loop; otherwise
 /// `FINISH_IN_LOOP` selects whether the loop encodes every whole chunk and an exact multiple of the
 /// chunk size returns without a final step, or the loop stops one chunk early and a single final
 /// step, shared with the short-input tail, always encodes the last chunk. These shapes, and
@@ -284,6 +285,17 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 return;
             }
         } else {
+            if len < t * 2 {
+                // One or two chunks, the second overlapping the first.
+                unsafe {
+                    let u0 = encode_chunk(read(ip, 0));
+                    if len > t {
+                        write(op, (len - t) * 2, encode_chunk(read(ip, len - t)));
+                    }
+                    write(op, 0, u0);
+                }
+                return;
+            }
             let end = unsafe { ip.add(len - t) };
             while p < end || (FINISH_IN_LOOP && p == end) {
                 unsafe {
