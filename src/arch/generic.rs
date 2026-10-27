@@ -26,9 +26,11 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 ///
 /// The methods and the kernels built on them are `#[inline(always)]` and have no
 /// `#[target_feature]`, so their intrinsics inline only into a function that has the features the
-/// vector type needs. A backend that needs features therefore calls the kernels from
-/// `#[target_feature]` functions: closures inherit the features of the function around them only
-/// from Rust 1.86, and without them every intrinsic is an out-of-line call.
+/// vector type needs. A backend that detects features at run time (SSSE3 and AVX2 on x86)
+/// therefore calls the kernels from `#[target_feature]` functions: closures inherit the features
+/// of the function around them only from Rust 1.86, and without them every intrinsic is an
+/// out-of-line call. A backend whose features the target enables at compile time (NEON and
+/// simd128) can call them from closures.
 ///
 /// # Safety
 ///
@@ -125,8 +127,8 @@ pub(crate) trait Vector: Copy {
     ///
     /// # Safety
     ///
-    /// `a` and `b` must be valid for writes of `len` bytes, and `len` must be a power of two from 4
-    /// up to half the size of the vector.
+    /// `a` and `b` must be valid for writes of `len` bytes, and `2 * len` must not exceed the size
+    /// of the vector.
     #[inline(always)]
     unsafe fn store_pair(self, a: *mut u8, b: *mut u8, len: usize) {
         let src = (&self as *const Self).cast::<u8>();

@@ -190,12 +190,8 @@ unsafe fn decode_checked_ssse3(input: &[u8], output: &mut [MaybeUninit<u8>]) -> 
     )
 }
 
-/// Defines `#[target_feature]` functions that call the shared kernels of a vector type.
-///
-/// The kernels are `#[inline(always)]` without target features, so their intrinsics inline only
-/// into a function that has the features. Before Rust 1.86 a closure does not inherit the features
-/// of the function around it, so the closures passed to the chunk helpers call these functions
-/// instead of the kernels.
+/// Defines `#[target_feature]` functions that call the shared kernels of a vector type, as the
+/// [`Vector`] docs explain.
 macro_rules! feature_kernels {
     ($feature:literal, $vector:ty, $encode:ident, $nibbles:ident, $all_valid:ident, $pack:ident) => {
         #[inline]

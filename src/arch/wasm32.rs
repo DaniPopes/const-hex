@@ -104,6 +104,7 @@ generic::impl_vector! {
         }
     }
 
+    /// `len` is 4 or 8, the only lengths the helpers store.
     #[inline(always)]
     unsafe fn store_pair(self, a: *mut u8, b: *mut u8, len: usize) {
         if len == 8 {
