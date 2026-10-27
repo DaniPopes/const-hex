@@ -396,6 +396,13 @@ const fn check_u64_mask(x: u64) -> u64 {
 }
 
 /// Decodes 8 valid hex characters into 4 bytes.
+#[cfg(any(
+    feature = "force-generic",
+    not(any(
+        feature = "portable-simd",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    ))
+))]
 const fn decode_u64(x: u64) -> u32 {
     // '0'..='9' -> 0..=9; 'A'..='F' and 'a'..='f' have bit 6 set -> (x & 0xF) + 9.
     let n = (x & (ONES * 0x0F)) + ((x >> 6) & ONES) * 9;
@@ -481,8 +488,15 @@ pub(crate) fn check_unaligned_chunks<T: Vector>(
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2`.
+// Mirrors the backend selection in `arch/mod.rs`.
+#[cfg(any(
+    feature = "force-generic",
+    not(any(
+        feature = "portable-simd",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    ))
+))]
 #[inline]
-#[allow(dead_code)]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: impl Output) -> bool {
     // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
     // loop below. Shorter inputs keep the inlined loop, which is faster for them.
@@ -497,6 +511,13 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: impl Output) -> bool {
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2`.
+#[cfg(any(
+    feature = "force-generic",
+    not(any(
+        feature = "portable-simd",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    ))
+))]
 #[inline(never)]
 unsafe fn decode_checked_swar(mut input: &[u8], mut output: impl Output) -> bool {
     while let &[
