@@ -32,7 +32,8 @@ pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl O
     // Load table.
     let hex_table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
 
-    generic::encode_unaligned_chunks::<UPPER, 1, _, _>(input, output, |chunk: uint8x16_t| {
+    // Finishing in the loop keeps the final step off the hot path for multiples of the chunk size.
+    generic::encode_unaligned_chunks::<UPPER, 1, true, _, _>(input, output, |chunk: uint8x16_t| {
         // Load input bytes and mask to nibbles.
         let mut lo = vandq_u8(chunk, vdupq_n_u8(0x0F));
         let mut hi = vshrq_n_u8(chunk, 4);
@@ -87,6 +88,11 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
 /// - Nibble pairs are merged with `vuzpq_u8` deinterleave + `(hi << 4) | lo`.
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even, because the
+/// tails overlap on hex pairs.
 #[inline]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     if cfg!(miri) || !has_neon() {

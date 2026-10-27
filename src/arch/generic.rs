@@ -26,8 +26,12 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 /// overlapping the one before it. Shorter inputs of at least [`MIN_PIECE`] bytes are encoded in
 /// one chunk built from two overlapping loads. Anything shorter is encoded with [`encode`].
 ///
-/// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. Unrolling twice
-/// avoids a layout-dependent slowdown on x86 and portable-simd, but is slower on aarch64 and wasm32.
+/// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`,
+/// `FINISH_IN_LOOP` selects whether the loop encodes every whole chunk and an exact multiple of the
+/// chunk size returns without a final step, or the loop stops one chunk early and a single final
+/// step, shared with the short-input tail, always encodes the last chunk. These shapes, and
+/// unrolling, are a per-backend choice because each is the fastest in some code generators and
+/// slower in others (see the callers); `FINISH_IN_LOOP` has no effect with `UNROLL` of `2`.
 ///
 /// # Safety
 ///
@@ -37,6 +41,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 pub(crate) unsafe fn encode_unaligned_chunks<
     const UPPER: bool,
     const UNROLL: usize,
+    const FINISH_IN_LOOP: bool,
     T: Copy,
     U: Copy,
 >(
@@ -78,18 +83,33 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 }
                 return;
             }
+            if done == len {
+                return;
+            }
         } else {
             let end = unsafe { ip.add(len - t) };
-            while p <= end {
+            if FINISH_IN_LOOP {
+                while p <= end {
+                    unsafe {
+                        write(o, 0, encode_chunk(read(p, 0)));
+                        p = p.add(t);
+                        o = o.add(t * 2);
+                    }
+                }
+                if p as usize - ip as usize == len {
+                    return;
+                }
+                // The last chunk, overlapping the one before it.
+                unsafe { write(op, (len - t) * 2, encode_chunk(read(ip, len - t))) };
+                return;
+            }
+            while p < end {
                 unsafe {
                     write(o, 0, encode_chunk(read(p, 0)));
                     p = p.add(t);
                     o = o.add(t * 2);
                 }
             }
-        }
-        if p as usize - ip as usize == len {
-            return;
         }
     }
 

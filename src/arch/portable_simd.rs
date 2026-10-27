@@ -11,7 +11,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
     // Load table.
     let hex_table = Simd::from_array(*get_chars_table::<UPPER>());
 
-    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |chunk: Simd| {
+    generic::encode_unaligned_chunks::<UPPER, 2, false, _, _>(input, output, |chunk: Simd| {
         // Load input bytes and mask to nibbles.
         let mut lo = chunk & Simd::splat(15);
         let mut hi = chunk >> Simd::splat(4);
@@ -48,6 +48,11 @@ pub(crate) fn check(input: &[u8]) -> bool {
 /// - Nibble pairs are merged with `deinterleave` + `(hi << 4) | lo`.
 ///
 /// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even, because the
+/// tails overlap on hex pairs.
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     debug_assert_eq!(output.len(), input.len() / 2);
 

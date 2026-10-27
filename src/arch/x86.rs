@@ -58,7 +58,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 #[inline(never)]
 #[target_feature(enable = "avx2")]
 unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |av| {
+    generic::encode_unaligned_chunks::<UPPER, 2, false, _, _>(input, output, |av| {
         encode_chunk_avx2::<UPPER>(av)
     });
 }
@@ -87,7 +87,7 @@ unsafe fn encode_chunk_avx2<const UPPER: bool>(input: __m256i) -> [__m256i; 2] {
 
 #[target_feature(enable = "ssse3")]
 unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |av| {
+    generic::encode_unaligned_chunks::<UPPER, 2, false, _, _>(input, output, |av| {
         encode_chunk_ssse3::<UPPER>(av)
     });
 }
