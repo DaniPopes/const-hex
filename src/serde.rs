@@ -62,19 +62,7 @@ where
 {
     if data.len() <= STACK_LEN {
         let mut buf = crate::impl_core::uninit_array::<u8, { STACK_LEN * 2 + 2 }>();
-        let prefix_len = PREFIX as usize * 2;
-        let len = prefix_len + data.len() * 2;
-        if PREFIX {
-            buf[0].write(b'0');
-            buf[1].write(b'x');
-        }
-        // SAFETY: `buf[prefix_len..len]` is exactly `data.len() * 2` bytes long.
-        unsafe { crate::encode_uninit::<UPPER>(data, &mut buf[prefix_len..len]) };
-        // SAFETY: `buf[..len]` has been fully initialized above, and only ASCII
-        // characters, which are valid UTF-8, have been written.
-        let s = unsafe {
-            core::str::from_utf8_unchecked(crate::impl_core::slice_assume_init(&buf[..len]))
-        };
+        let s = crate::display::encode_str::<UPPER>(data, PREFIX, &mut buf);
         serializer.serialize_str(s)
     } else {
         serializer.collect_str(&HexDisplay::<UPPER, PREFIX>(data))

@@ -266,7 +266,7 @@ pub(crate) unsafe fn encode_unaligned_chunks<
 ) {
     const { assert!(UNROLL == 1 || UNROLL == 2) };
     let len = input.len();
-    debug_assert!(output.remaining().is_none_or(|n| n >= len * 2));
+    debug_assert!(output.remaining() >= len * 2);
     let ip = input.as_ptr();
     let op = output.as_mut_ptr();
     let t = size_of::<T>();
@@ -517,7 +517,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bo
     if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) && input.len() >= 16 {
         return unsafe { decode_checked_swar(input, output) };
     }
-    let l = output.remaining().unwrap_or(input.len() / 2);
+    let l = output.remaining();
     debug_assert_eq!(l, input.len() / 2);
     let mut i = 0;
     while i < l {
@@ -601,7 +601,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<T: Vector>(
 ) -> bool {
     let len = input.len();
     debug_assert_eq!(len % 2, 0);
-    debug_assert!(output.remaining().is_none_or(|n| n == len / 2));
+    debug_assert_eq!(output.remaining(), len / 2);
     let ip = input.as_ptr();
     let op = output.as_mut_ptr();
     let t = size_of::<T>();

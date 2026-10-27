@@ -1,6 +1,6 @@
 use core::mem::MaybeUninit;
 
-/// Internal trait for abstracting over output buffer types.
+/// Internal trait for the uninitialized output buffer of the encoders and decoders.
 pub(crate) trait Output {
     fn write(&mut self, bytes: &[u8]);
 
@@ -9,38 +9,14 @@ pub(crate) trait Output {
         self.write(&[byte])
     }
 
-    #[inline]
-    fn remaining(&self) -> Option<usize> {
-        None
-    }
+    /// Returns the number of bytes left in the output.
+    fn remaining(&self) -> usize;
 
     /// Returns a pointer to the start of the remaining output.
     ///
     /// Writes through the pointer must stay within the remaining length, and the output must not
     /// be used again while the pointer is in use.
-    #[allow(dead_code)]
     fn as_mut_ptr(&mut self) -> *mut u8;
-}
-
-impl Output for &mut [u8] {
-    #[inline]
-    fn write(&mut self, bytes: &[u8]) {
-        let this = crate::impl_core::slice_as_uninit_mut(self);
-        unsafe {
-            let count = write_bytes_output_slice(this, bytes);
-            advance_slice(self, count);
-        }
-    }
-
-    #[inline]
-    fn remaining(&self) -> Option<usize> {
-        Some(self.len())
-    }
-
-    #[inline]
-    fn as_mut_ptr(&mut self) -> *mut u8 {
-        <[u8]>::as_mut_ptr(self)
-    }
 }
 
 impl Output for &mut [MaybeUninit<u8>] {
@@ -53,8 +29,8 @@ impl Output for &mut [MaybeUninit<u8>] {
     }
 
     #[inline]
-    fn remaining(&self) -> Option<usize> {
-        Some(self.len())
+    fn remaining(&self) -> usize {
+        self.len()
     }
 
     #[inline]
