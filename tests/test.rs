@@ -304,28 +304,50 @@ fn check_simd_boundaries() {
     }
 }
 
+/// Sequential and pseudo-random inputs around every SIMD tail and chunk boundary.
+fn boundary_inputs() -> impl Iterator<Item = Vec<u8>> {
+    (0..=65usize)
+        .chain([100, 127, 128, 129, 255, 256])
+        .flat_map(|size| {
+            [
+                (0..size).map(|i| i as u8).collect(),
+                (0..size)
+                    .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
+                    .collect(),
+            ]
+        })
+}
+
 #[test]
 #[cfg(feature = "alloc")]
 fn encode_simd_boundaries() {
-    for size in [1, 2, 15, 16, 17, 18, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
-        let input: Vec<u8> = (0..size).map(|i| i as u8).collect();
+    for input in boundary_inputs() {
+        let size = input.len();
         let encoded = const_hex::encode(&input);
         assert_eq!(encoded.len(), size * 2, "encode failed at size {size}");
 
         let expected: String = input.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(encoded, expected, "encode mismatch at size {size}");
-        assert_eq!(
-            const_hex::encode_upper(&input),
-            expected.to_uppercase(),
-            "encode_upper mismatch at size {size}"
-        );
+
+        let encoded = const_hex::encode_upper(&input);
+        let expected: String = input.iter().map(|b| format!("{b:02X}")).collect();
+        assert_eq!(encoded, expected, "encode_upper mismatch at size {size}");
     }
 }
 
 #[test]
 #[cfg(feature = "alloc")]
 fn decode_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
+    // Miri is slow; the extra sizes only reach more of the AVX2 tails.
+    let sizes: &[usize] = if cfg!(miri) {
+        &[1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129]
+    } else {
+        &[
+            1, 2, 3, 4, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 40, 48, 49, 63, 64, 65, 88, 96, 126,
+            127, 128, 129, 160,
+        ]
+    };
+    for &size in sizes {
         let bytes: Vec<u8> = (0..size).map(|i| i as u8).collect();
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
 
@@ -335,19 +357,55 @@ fn decode_simd_boundaries() {
         let mut output = vec![0u8; size];
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
+
+        // Miri is slow, so only test the edges there.
+        let positions = if cfg!(miri) {
+            vec![0, hex.len() - 1]
+        } else {
+            (0..hex.len()).collect()
+        };
+        let mut invalid = hex.into_bytes();
+        for pos in positions {
+            let byte = invalid[pos];
+            invalid[pos] = b'g';
+            assert_eq!(
+                const_hex::decode_to_slice(&invalid, &mut output),
+                Err(const_hex::FromHexError::InvalidHexCharacter { c: 'g', index: pos }),
+                "should fail at size {size}, pos {pos}"
+            );
+            invalid[pos] = byte;
+        }
     }
 }
 
 #[test]
 fn encode_to_slice_simd_boundaries() {
-    for size in [1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
-        let input: Vec<u8> = (0..size).map(|i| i as u8).collect();
-        let mut output = vec![0u8; size * 2];
-
-        const_hex::encode_to_slice(&input, &mut output).unwrap();
-
-        let expected: String = input.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(output, expected.as_bytes(), "mismatch at size {size}");
+    for input in boundary_inputs() {
+        let size = input.len();
+        for upper in [false, true] {
+            // The guard bytes before and after the output must stay untouched.
+            let mut output = vec![0xAA; size * 2 + 32];
+            let expected: String = if upper {
+                const_hex::encode_to_slice_upper(&input, &mut output[16..16 + size * 2]).unwrap();
+                input.iter().map(|b| format!("{b:02X}")).collect()
+            } else {
+                const_hex::encode_to_slice(&input, &mut output[16..16 + size * 2]).unwrap();
+                input.iter().map(|b| format!("{b:02x}")).collect()
+            };
+            assert_eq!(
+                &output[16..16 + size * 2],
+                expected.as_bytes(),
+                "mismatch at size {size}, upper: {upper}"
+            );
+            assert!(
+                output[..16].iter().all(|&b| b == 0xAA),
+                "underrun at size {size}, upper: {upper}"
+            );
+            assert!(
+                output[16 + size * 2..].iter().all(|&b| b == 0xAA),
+                "overrun at size {size}, upper: {upper}"
+            );
+        }
     }
 }
 
@@ -357,7 +415,9 @@ fn check_all_invalid_chars() {
     let lens = if cfg!(miri) {
         vec![1, 25]
     } else {
-        (1..=33).collect()
+        (1..=33)
+            .chain([40, 63, 64, 65, 126, 127, 128, 129, 160, 161])
+            .collect()
     };
     for len in lens {
         let mut input = vec![b'a'; len];

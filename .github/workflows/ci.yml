@@ -94,8 +94,25 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
         flags: ["", -Fforce-generic]
+        include:
+          # Miri only sees compile-time target features, so enable AVX2 to run the x86 SIMD kernels.
+          # `-Fstd` is a no-op that keeps this entry distinct from the plain x86_64 combination.
+          - target: x86_64-unknown-linux-gnu
+            flags: -Fstd
+            rustflags: -Ctarget-feature=+avx2
+          # The same for the SSSE3 kernels, which Miri selects when AVX2 is not enabled. `-Fserde` is a no-op.
+          - target: x86_64-unknown-linux-gnu
+            flags: -Fserde
+            rustflags: -Ctarget-feature=+ssse3
+          # Big-endian.
+          - target: s390x-unknown-linux-gnu
+          # Big-endian with the SIMD helpers, which the generic backend does not use.
+          - target: s390x-unknown-linux-gnu
+            flags: -Fnightly,portable-simd
     env:
       MIRIFLAGS: -Zmiri-strict-provenance
+      RUSTFLAGS: -Dwarnings ${{ matrix.rustflags }}
+      RUSTDOCFLAGS: ${{ matrix.rustflags }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@miri
