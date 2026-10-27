@@ -44,8 +44,8 @@ generic::impl_vector! {
     and = core::ops::BitAnd::bitand,
     or = core::ops::BitOr::bitor,
     sub = core::ops::Sub::sub,
-    adds = Simd::saturating_add,
-    subs = Simd::saturating_sub,
+    saturating_add = core::simd::num::SimdUint::saturating_add,
+    saturating_sub = core::simd::num::SimdUint::saturating_sub,
     min = Simd::simd_min;
 
     #[inline(always)]
@@ -75,7 +75,7 @@ generic::impl_vector! {
     }
 
     #[inline(always)]
-    unsafe fn zip(a: Self, b: Self) -> [Self; 2] {
+    unsafe fn interleave(a: Self, b: Self) -> [Self; 2] {
         let (lo, hi) = Simd::interleave(a, b);
         [lo, hi]
     }

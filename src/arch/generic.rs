@@ -24,11 +24,18 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 ///
 /// Each backend implements this for its vector type and passes the kernels to the chunk helpers.
 ///
+/// The methods and the kernels built on them are `#[inline(always)]` and have no
+/// `#[target_feature]`, so their intrinsics inline only into a function that has the features the
+/// vector type needs. A backend that needs features therefore calls the kernels from
+/// `#[target_feature]` functions: closures inherit the features of the function around them only
+/// from Rust 1.86, and without them every intrinsic is an out-of-line call.
+///
 /// # Safety
 ///
 /// Every method is `unsafe` because an implementation may need a CPU feature that the caller must
-/// have enabled: `hex_digits` and `pack` of `__m128i` need SSSE3, and every method of `__m256i`
-/// needs AVX2.
+/// have enabled: the methods of `__m128i` need SSE2 except `hex_digits` and `pack`, which need
+/// SSSE3, every method of `__m256i` needs AVX2, and the methods of `uint8x16_t` and `v128` need
+/// NEON and simd128.
 #[allow(dead_code)]
 pub(crate) trait Vector: Copy {
     /// Returns a vector with every byte set to `x`.
@@ -44,10 +51,10 @@ pub(crate) trait Vector: Copy {
     unsafe fn sub(self, other: Self) -> Self;
 
     /// Returns `self + other` for each byte, saturating at 255.
-    unsafe fn adds(self, other: Self) -> Self;
+    unsafe fn saturating_add(self, other: Self) -> Self;
 
     /// Returns `self - other` for each byte, saturating at 0.
-    unsafe fn subs(self, other: Self) -> Self;
+    unsafe fn saturating_sub(self, other: Self) -> Self;
 
     /// Returns the smaller of `self` and `other` for each byte.
     unsafe fn min(self, other: Self) -> Self;
@@ -59,7 +66,7 @@ pub(crate) trait Vector: Copy {
     unsafe fn hex_digits<const UPPER: bool>(self) -> Self;
 
     /// Interleaves the bytes of `a` and `b`: `a[0], b[0], a[1], b[1], ...`, returned as two vectors.
-    unsafe fn zip(a: Self, b: Self) -> [Self; 2];
+    unsafe fn interleave(a: Self, b: Self) -> [Self; 2];
 
     /// Joins pairs of nibbles into bytes: the even bytes of `a` then `b` are the high nibbles and
     /// the odd bytes the low nibbles, and the result is the bytes of `a` followed by those of `b`.
@@ -71,8 +78,8 @@ pub(crate) trait Vector: Copy {
     unsafe fn is_zero(self) -> bool;
 
     /// Loads a vector that starts with `piece` bytes at `a`, then `piece` bytes at `b`. The other
-    /// bytes are unspecified, but must stay valid hex digits for `check`, so they are the pieces
-    /// again or `b'0'`.
+    /// bytes are unspecified, but must be valid hex digits, because `check` and decode test every
+    /// byte, so they are the pieces again or `b'0'`.
     ///
     /// # Safety
     ///
@@ -118,8 +125,8 @@ pub(crate) trait Vector: Copy {
     ///
     /// # Safety
     ///
-    /// `a` and `b` must be valid for writes of `len` bytes, and `2 * len` must not exceed the size
-    /// of the vector.
+    /// `a` and `b` must be valid for writes of `len` bytes, and `len` must be a power of two from 4
+    /// up to half the size of the vector.
     #[inline(always)]
     unsafe fn store_pair(self, a: *mut u8, b: *mut u8, len: usize) {
         let src = (&self as *const Self).cast::<u8>();
@@ -152,17 +159,13 @@ pub(crate) use impl_vector;
 
 /// Encodes a chunk to hex: the hex digits of its high nibbles interleaved with those of its low
 /// nibbles.
-///
-/// The kernels are `#[inline(always)]` and have no `#[target_feature]`, so a backend must pass
-/// them from closures written inside its `#[target_feature]` function: only those closures inherit
-/// the features that let the intrinsics inline.
 #[inline(always)]
 #[allow(dead_code)]
 pub(crate) unsafe fn encode_kernel<const UPPER: bool, V: Vector>(chunk: V) -> [V; 2] {
     unsafe {
         let hi = chunk.shr4().hex_digits::<UPPER>();
         let lo = chunk.and(V::splat(0x0f)).hex_digits::<UPPER>();
-        V::zip(hi, lo)
+        V::interleave(hi, lo)
     }
 }
 
@@ -175,11 +178,11 @@ pub(crate) unsafe fn encode_kernel<const UPPER: bool, V: Vector>(chunk: V) -> [V
 #[allow(dead_code)]
 pub(crate) unsafe fn check_kernel<V: Vector>(chunk: V) -> V {
     unsafe {
-        let digit = chunk.sub(V::splat(b'0')).subs(V::splat(9));
+        let digit = chunk.sub(V::splat(b'0')).saturating_sub(V::splat(9));
         let letter = chunk
             .or(V::splat(0x20))
             .sub(V::splat(b'a'))
-            .subs(V::splat(5));
+            .saturating_sub(V::splat(5));
         digit.min(letter)
     }
 }
@@ -195,13 +198,13 @@ pub(crate) unsafe fn decode_kernel<V: Vector>(chunk: V) -> V {
         // Digits '0'..'9' → 0..9, others > 15.
         let digit = chunk
             .sub(V::splat(b'9' + 1))
-            .subs(V::splat(6))
+            .saturating_sub(V::splat(6))
             .sub(V::splat(0xF0));
         // Letters 'A'..'F' and 'a'..'f' → 10..15, others > 15.
         let letter = chunk
             .and(V::splat(0xDF))
             .sub(V::splat(b'A'))
-            .adds(V::splat(10));
+            .saturating_add(V::splat(10));
         digit.min(letter)
     }
 }
@@ -392,8 +395,9 @@ const fn check_u64_mask(x: u64) -> u64 {
 
 /// Checks `input` in chunks of `T`.
 ///
-/// `valid` returns a mask of the valid bytes of a chunk, `combine` merges the masks of several
-/// chunks so they are tested together, and `all` tests whether a mask has no invalid byte.
+/// `valid` classifies the bytes of a chunk, `combine` merges the classifications of several chunks
+/// so they are tested together, and `all_valid` tests whether a classification has no invalid
+/// byte. How a classification marks a valid byte is up to the backend.
 ///
 /// Inputs of at least `size_of::<T>()` bytes are checked in groups of four chunks, then by the size
 /// of the remainder in one more group of four, two or one chunk that overlaps the ones before it.
@@ -402,11 +406,11 @@ const fn check_u64_mask(x: u64) -> u64 {
 /// is passed to [`check`].
 #[inline]
 #[allow(dead_code)]
-pub(crate) fn check_unaligned_chunks<T: Vector, M: Copy>(
+pub(crate) fn check_unaligned_chunks<T: Vector>(
     input: &[u8],
-    valid: impl Fn(T) -> M,
-    combine: impl Fn(M, M) -> M,
-    all: impl Fn(M) -> bool,
+    valid: impl Fn(T) -> T,
+    combine: impl Fn(T, T) -> T,
+    all_valid: impl Fn(T) -> bool,
 ) -> bool {
     let len = input.len();
     let ip = input.as_ptr();
@@ -419,7 +423,7 @@ pub(crate) fn check_unaligned_chunks<T: Vector, M: Copy>(
             while p <= end {
                 let [c0, c1, c2, c3] = unsafe { read::<[T; 4]>(p, 0) };
                 let (v01, v23) = (combine(valid(c0), valid(c1)), combine(valid(c2), valid(c3)));
-                if !all(combine(v01, v23)) {
+                if !all_valid(combine(v01, v23)) {
                     return false;
                 }
                 p = unsafe { p.add(t * 4) };
@@ -440,22 +444,22 @@ pub(crate) fn check_unaligned_chunks<T: Vector, M: Copy>(
                     valid(unsafe { read(ip, len - t) }),
                 ),
             );
-            all(combine(v01, v23))
+            all_valid(combine(v01, v23))
         } else if rem > t {
             // The last two chunks.
             let (a, b) = tail_offsets(len, t);
-            all(combine(
+            all_valid(combine(
                 valid(unsafe { read(ip, a) }),
                 valid(unsafe { read(ip, b) }),
             ))
         } else {
             // The last chunk.
-            rem == 0 || all(valid(unsafe { read(ip, len - t) }))
+            rem == 0 || all_valid(valid(unsafe { read(ip, len - t) }))
         }
     } else if let Some(chunk) =
         by_piece::<T, MIN_PIECE, _>(len, |p| unsafe { load_tail(ip, len, p) })
     {
-        all(valid(chunk))
+        all_valid(valid(chunk))
     } else {
         check(input)
     }
@@ -485,15 +489,14 @@ pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bo
     true
 }
 
-/// Checked-decodes `input` to `output` in vectors of `V`.
+/// Checked-decodes `input` to `output` in vectors of `T`.
 ///
 /// `nibbles` converts the characters of a vector to nibbles, where an invalid character becomes a
 /// value above 15. `combine` merges the nibbles of several vectors so they are tested together,
 /// `all_valid` tests whether merged nibbles are all valid, and `pack` joins the nibbles of two
-/// vectors into `T`, the decoded bytes of the first followed by those of the second. `T` is the
-/// size of `V`.
+/// vectors into the decoded bytes of the first followed by those of the second.
 ///
-/// Inputs of at least `size_of::<V>()` characters are decoded in groups of four vectors, and the
+/// Inputs of at least `size_of::<T>()` characters are decoded in groups of four vectors, and the
 /// remainder in one last group of four, two or one vector that overlaps the groups before it.
 /// Shorter inputs of at least [`MIN_DECODE_PIECE`] characters are decoded in one vector built from
 /// two overlapping loads. Anything shorter is passed to [`decode_checked`]. Returns `false` on the
@@ -505,82 +508,81 @@ pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bo
 /// the tails overlap on whole hex pairs.
 #[inline]
 #[allow(dead_code)]
-pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Vector, N: Copy, T: Vector>(
+pub(crate) unsafe fn decode_checked_unaligned_chunks<T: Vector>(
     input: &[u8],
     mut output: impl Output,
-    nibbles: impl Fn(V) -> N,
-    combine: impl Fn(N, N) -> N,
-    all_valid: impl Fn(N) -> bool,
-    pack: impl Fn(N, N) -> T,
+    nibbles: impl Fn(T) -> T,
+    combine: impl Fn(T, T) -> T,
+    all_valid: impl Fn(T) -> bool,
+    pack: impl Fn(T, T) -> T,
 ) -> bool {
-    debug_assert_eq!(size_of::<V>(), size_of::<T>());
     let len = input.len();
     debug_assert_eq!(len % 2, 0);
     debug_assert!(output.remaining().is_none_or(|n| n == len / 2));
     let ip = input.as_ptr();
     let op = output.as_mut_ptr();
-    let v = size_of::<V>();
+    let t = size_of::<T>();
 
-    if len >= v {
+    if len >= t {
         let (mut p, mut o) = (ip, op);
         unsafe {
-            if len >= v * 4 {
-                let end = ip.add(len - v * 4);
+            if len >= t * 4 {
+                let end = ip.add(len - t * 4);
                 while p <= end {
-                    let [v0, v1, v2, v3] = read::<[V; 4]>(p, 0);
+                    let [v0, v1, v2, v3] = read::<[T; 4]>(p, 0);
                     let (n0, n1, n2, n3) = (nibbles(v0), nibbles(v1), nibbles(v2), nibbles(v3));
                     if !all_valid(combine(combine(n0, n1), combine(n2, n3))) {
                         return false;
                     }
                     write(o, 0, pack(n0, n1));
-                    write(o, v, pack(n2, n3));
-                    p = p.add(v * 4);
-                    o = o.add(v * 2);
+                    write(o, t, pack(n2, n3));
+                    p = p.add(t * 4);
+                    o = o.add(t * 2);
                 }
             }
             let rem = len - (p.addr() - ip.addr());
-            if rem > v * 2 {
+            if rem > t * 2 {
                 // The last four vectors, overlapping each other or what is already decoded. The
                 // first two vectors start at the beginning of the input if it is shorter than four
                 // vectors.
-                let a = len.saturating_sub(v * 4);
-                let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, a + v)));
-                let (n2, n3) = (nibbles(read(ip, len - v * 2)), nibbles(read(ip, len - v)));
+                let a = len.saturating_sub(t * 4);
+                let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, a + t)));
+                let (n2, n3) = (nibbles(read(ip, len - t * 2)), nibbles(read(ip, len - t)));
                 if !all_valid(combine(combine(n0, n1), combine(n2, n3))) {
                     return false;
                 }
                 write(op, a / 2, pack(n0, n1));
-                write(op, (len - v * 2) / 2, pack(n2, n3));
-            } else if rem > v {
+                write(op, (len - t * 2) / 2, pack(n2, n3));
+            } else if rem > t {
                 // The last two vectors, overlapping each other or what is already decoded.
-                let (a, b) = tail_offsets(len, v);
+                let (a, b) = tail_offsets(len, t);
                 let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, b)));
                 if !all_valid(combine(n0, n1)) {
                     return false;
                 }
-                if len >= v * 2 {
+                if len >= t * 2 {
                     write(op, a / 2, pack(n0, n1));
                 } else {
-                    pack(n0, n1).store_pair(op.add(a / 2), op.add(b / 2), v / 2);
+                    pack(n0, n1).store_pair(op.add(a / 2), op.add(b / 2), t / 2);
                 }
             } else if rem > 0 {
                 // The last vector, overlapping what is already decoded, if anything.
-                let n = nibbles(read(ip, len - v));
+                let n = nibbles(read(ip, len - t));
                 if !all_valid(n) {
                     return false;
                 }
-                store_prefix(pack(n, n), op.add((len - v) / 2), v / 2);
+                store_prefix(pack(n, n), op.add((len - t) / 2), t / 2);
             }
         }
         true
     } else if let Some(n) =
-        by_piece::<V, MIN_DECODE_PIECE, _>(len, |p| unsafe { nibbles(load_tail(ip, len, p)) })
+        by_piece::<T, MIN_DECODE_PIECE, _>(len, |p| unsafe { nibbles(load_tail(ip, len, p)) })
     {
         if !all_valid(n) {
             return false;
         }
         let decoded = pack(n, n);
-        let stored = by_piece::<V, MIN_DECODE_PIECE, _>(len, |p| unsafe {
+        let stored = by_piece::<T, MIN_DECODE_PIECE, _>(len, |p| unsafe {
             let (a, b) = tail_offsets(len, p);
             decoded.store_pair(op.add(a / 2), op.add(b / 2), p / 2)
         });

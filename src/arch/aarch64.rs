@@ -113,8 +113,8 @@ generic::impl_vector! {
     and = vandq_u8,
     or = vorrq_u8,
     sub = vsubq_u8,
-    adds = vqaddq_u8,
-    subs = vqsubq_u8,
+    saturating_add = vqaddq_u8,
+    saturating_sub = vqsubq_u8,
     min = vminq_u8;
 
     #[inline(always)]
@@ -133,13 +133,14 @@ generic::impl_vector! {
     }
 
     #[inline(always)]
-    unsafe fn zip(a: Self, b: Self) -> [Self; 2] {
+    unsafe fn interleave(a: Self, b: Self) -> [Self; 2] {
         let zipped = vzipq_u8(a, b);
         [zipped.0, zipped.1]
     }
 
-    /// Also accepts bytes above 15: `vsliq_n_u8` drops the bits of the high nibbles above the
-    /// lower four, as [`decode_checked_neon`] needs for the marker bit of `nibbles`.
+    /// Also accepts bytes above 15: `vsliq_n_u8::<4>` shifts the high nibbles left by four and keeps
+    /// only the low four bits of each low nibble, so the marker bit of `nibbles` drops out, as
+    /// [`decode_checked_neon`] needs.
     #[inline(always)]
     unsafe fn pack(a: Self, b: Self) -> Self {
         vsliq_n_u8::<4>(vuzp2q_u8(a, b), vuzp1q_u8(a, b))

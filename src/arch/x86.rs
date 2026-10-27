@@ -58,15 +58,15 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 #[inline(never)]
 #[target_feature(enable = "avx2")]
 unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 2, false, _>(input, output, |chunk: __m256i| {
-        generic::encode_kernel::<UPPER, _>(chunk)
+    generic::encode_unaligned_chunks::<UPPER, 2, false, _>(input, output, |chunk| {
+        encode_chunk_avx2::<UPPER>(chunk)
     });
 }
 
 #[target_feature(enable = "ssse3")]
 unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 2, false, _>(input, output, |chunk: __m128i| {
-        generic::encode_kernel::<UPPER, _>(chunk)
+    generic::encode_unaligned_chunks::<UPPER, 2, false, _>(input, output, |chunk| {
+        encode_chunk_ssse3::<UPPER>(chunk)
     });
 }
 
@@ -119,7 +119,7 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 unsafe fn check_sse2(input: &[u8]) -> bool {
     generic::check_unaligned_chunks(
         input,
-        |chunk| check_chunk_sse2(chunk),
+        |chunk| valid_sse2(chunk),
         |a, b| _mm_and_si128(a, b),
         |mask| _mm_movemask_epi8(mask) == 0xffff,
     )
@@ -127,7 +127,7 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
 
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn check_chunk_sse2(chunk: __m128i) -> __m128i {
+unsafe fn valid_sse2(chunk: __m128i) -> __m128i {
     let digit_bias = _mm_set1_epi8(0xB0_u8 as i8);
     let alpha_bias = _mm_set1_epi8(0xC1_u8 as i8);
     let case_mask = _mm_set1_epi8(0xDF_u8 as i8);
@@ -143,14 +143,7 @@ unsafe fn check_chunk_sse2(chunk: __m128i) -> __m128i {
     _mm_or_si128(m1, m2)
 }
 
-/// Single-pass hex decode with validation using Muła & Langdale's Algorithm #3.
-///
-/// Converts ASCII hex to nibble values and validates simultaneously:
-/// - Digits '0'..'9' → 0..9, letters 'A'..'F'/'a'..'f' → 10..15 via saturation arithmetic.
-/// - Invalid bytes produce values > 15, detected by `testz(nibble, 0xF0)`.
-/// - Nibble pairs are merged with `maddubs(nibbles, 0x0110)` (hi*16 + lo).
-///
-/// Based on: <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+/// Single-pass hex decode with validation.
 ///
 /// # Safety
 ///
@@ -174,10 +167,10 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
     generic::decode_checked_unaligned_chunks(
         input,
         output,
-        |chunk: __m256i| generic::decode_kernel(chunk),
-        |a, b| a.or(b),
-        |nibbles| generic::decode_all_valid(nibbles),
-        |a, b| __m256i::pack(a, b),
+        |chunk| decode_nibbles_avx2(chunk),
+        |a, b| _mm256_or_si256(a, b),
+        |nibbles| decode_all_valid_avx2(nibbles),
+        |a, b| pack_avx2(a, b),
     )
 }
 
@@ -190,20 +183,71 @@ unsafe fn decode_checked_ssse3(input: &[u8], output: &mut [MaybeUninit<u8>]) -> 
     generic::decode_checked_unaligned_chunks(
         input,
         output,
-        |chunk: __m128i| generic::decode_kernel(chunk),
-        |a, b| a.or(b),
-        |nibbles| generic::decode_all_valid(nibbles),
-        |a, b| __m128i::pack(a, b),
+        |chunk| decode_nibbles_ssse3(chunk),
+        |a, b| _mm_or_si128(a, b),
+        |nibbles| decode_all_valid_ssse3(nibbles),
+        |a, b| pack_ssse3(a, b),
     )
 }
+
+/// Defines `#[target_feature]` functions that call the shared kernels of a vector type.
+///
+/// The kernels are `#[inline(always)]` without target features, so their intrinsics inline only
+/// into a function that has the features. Before Rust 1.86 a closure does not inherit the features
+/// of the function around it, so the closures passed to the chunk helpers call these functions
+/// instead of the kernels.
+macro_rules! feature_kernels {
+    ($feature:literal, $vector:ty, $encode:ident, $nibbles:ident, $all_valid:ident, $pack:ident) => {
+        #[inline]
+        #[target_feature(enable = $feature)]
+        unsafe fn $encode<const UPPER: bool>(chunk: $vector) -> [$vector; 2] {
+            generic::encode_kernel::<UPPER, _>(chunk)
+        }
+
+        #[inline]
+        #[target_feature(enable = $feature)]
+        unsafe fn $nibbles(chunk: $vector) -> $vector {
+            generic::decode_kernel(chunk)
+        }
+
+        #[inline]
+        #[target_feature(enable = $feature)]
+        unsafe fn $all_valid(nibbles: $vector) -> bool {
+            generic::decode_all_valid(nibbles)
+        }
+
+        #[inline]
+        #[target_feature(enable = $feature)]
+        unsafe fn $pack(a: $vector, b: $vector) -> $vector {
+            <$vector>::pack(a, b)
+        }
+    };
+}
+
+feature_kernels!(
+    "avx2",
+    __m256i,
+    encode_chunk_avx2,
+    decode_nibbles_avx2,
+    decode_all_valid_avx2,
+    pack_avx2
+);
+feature_kernels!(
+    "ssse3",
+    __m128i,
+    encode_chunk_ssse3,
+    decode_nibbles_ssse3,
+    decode_all_valid_ssse3,
+    pack_ssse3
+);
 
 generic::impl_vector! {
     __m128i;
     and = _mm_and_si128,
     or = _mm_or_si128,
     sub = _mm_sub_epi8,
-    adds = _mm_adds_epu8,
-    subs = _mm_subs_epu8,
+    saturating_add = _mm_adds_epu8,
+    saturating_sub = _mm_subs_epu8,
     min = _mm_min_epu8;
 
     #[inline(always)]
@@ -224,7 +268,7 @@ generic::impl_vector! {
     }
 
     #[inline(always)]
-    unsafe fn zip(a: Self, b: Self) -> [Self; 2] {
+    unsafe fn interleave(a: Self, b: Self) -> [Self; 2] {
         [_mm_unpacklo_epi8(a, b), _mm_unpackhi_epi8(a, b)]
     }
 
@@ -246,8 +290,8 @@ generic::impl_vector! {
     and = _mm256_and_si256,
     or = _mm256_or_si256,
     sub = _mm256_sub_epi8,
-    adds = _mm256_adds_epu8,
-    subs = _mm256_subs_epu8,
+    saturating_add = _mm256_adds_epu8,
+    saturating_sub = _mm256_subs_epu8,
     min = _mm256_min_epu8;
 
     #[inline(always)]
@@ -268,7 +312,7 @@ generic::impl_vector! {
 
     /// Unpacking works within each 128-bit lane, so the lanes are put back in order afterwards.
     #[inline(always)]
-    unsafe fn zip(a: Self, b: Self) -> [Self; 2] {
+    unsafe fn interleave(a: Self, b: Self) -> [Self; 2] {
         let lo = _mm256_unpacklo_epi8(a, b);
         let hi = _mm256_unpackhi_epi8(a, b);
         [

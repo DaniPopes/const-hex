@@ -49,8 +49,8 @@ generic::impl_vector! {
     and = v128_and,
     or = v128_or,
     sub = u8x16_sub,
-    adds = u8x16_add_sat,
-    subs = u8x16_sub_sat,
+    saturating_add = u8x16_add_sat,
+    saturating_sub = u8x16_sub_sat,
     min = u8x16_min;
 
     #[inline(always)]
@@ -69,7 +69,7 @@ generic::impl_vector! {
     }
 
     #[inline(always)]
-    unsafe fn zip(a: Self, b: Self) -> [Self; 2] {
+    unsafe fn interleave(a: Self, b: Self) -> [Self; 2] {
         #[rustfmt::skip]
         let lo = u8x16_shuffle::<0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23>(a, b);
         #[rustfmt::skip]
