@@ -20,6 +20,183 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
     }
 }
 
+/// A SIMD vector of bytes, with the operations the SIMD kernels below are built from.
+///
+/// Each backend implements this for its vector type and passes the kernels to the chunk helpers.
+/// Every method is `unsafe` because an implementation may need a CPU feature that the caller must
+/// have enabled.
+#[allow(dead_code)]
+pub(crate) trait Vector: Copy {
+    /// Returns a vector with every byte set to `x`.
+    unsafe fn splat(x: u8) -> Self;
+
+    /// Returns `self & other`.
+    unsafe fn and(self, other: Self) -> Self;
+
+    /// Returns `self | other`.
+    unsafe fn or(self, other: Self) -> Self;
+
+    /// Returns `self - other` for each byte, wrapping on overflow.
+    unsafe fn sub(self, other: Self) -> Self;
+
+    /// Returns `self + other` for each byte, saturating at 255.
+    unsafe fn adds(self, other: Self) -> Self;
+
+    /// Returns `self - other` for each byte, saturating at 0.
+    unsafe fn subs(self, other: Self) -> Self;
+
+    /// Returns the smaller of `self` and `other` for each byte.
+    unsafe fn min(self, other: Self) -> Self;
+
+    /// Returns each byte shifted right by 4 bits.
+    unsafe fn shr4(self) -> Self;
+
+    /// Returns the ASCII hex digit of each byte, which must be at most 15.
+    unsafe fn hex_digits<const UPPER: bool>(self) -> Self;
+
+    /// Interleaves the bytes of `a` and `b`: `a[0], b[0], a[1], b[1], ...`, returned as two vectors.
+    unsafe fn zip(a: Self, b: Self) -> [Self; 2];
+
+    /// Joins pairs of nibbles into bytes: the even bytes of `a` then `b` are the high nibbles and
+    /// the odd bytes the low nibbles, and the result is the bytes of `a` followed by those of `b`.
+    ///
+    /// Each byte must be at most 15.
+    unsafe fn pack(a: Self, b: Self) -> Self;
+
+    /// Returns whether every byte is zero.
+    unsafe fn is_zero(self) -> bool;
+}
+
+/// Implements [`Vector`] for `$ty`. Each `$method = $f` defines a method that returns
+/// `$f(self, other)`, and the remaining methods follow.
+#[allow(unused_macros)]
+macro_rules! impl_vector {
+    ($ty:ty; $($method:ident = $f:path),* $(,)?; $($rest:tt)*) => {
+        impl Vector for $ty {
+            $(
+                #[inline(always)]
+                unsafe fn $method(self, other: Self) -> Self {
+                    $f(self, other)
+                }
+            )*
+
+            $($rest)*
+        }
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use impl_vector;
+
+/// Encodes a chunk to hex: the hex digits of its high nibbles interleaved with those of its low
+/// nibbles.
+#[inline(always)]
+unsafe fn encode_kernel<const UPPER: bool, V: Vector>(chunk: V) -> [V; 2] {
+    unsafe {
+        let hi = chunk.shr4().hex_digits::<UPPER>();
+        let lo = chunk.and(V::splat(0x0f)).hex_digits::<UPPER>();
+        V::zip(hi, lo)
+    }
+}
+
+/// Returns a vector that is zero exactly in the bytes of `chunk` that are ASCII hex digits.
+///
+/// A byte is a hex digit iff `x - b'0' <= 9` or `(x | 0x20) - b'a' <= 5`, with wrapping
+/// subtraction, so the smaller of the two saturating excesses over the limits is zero exactly for
+/// hex digits.
+#[inline(always)]
+unsafe fn check_kernel<V: Vector>(chunk: V) -> V {
+    unsafe {
+        let digit = chunk.sub(V::splat(b'0')).subs(V::splat(9));
+        let letter = chunk
+            .or(V::splat(0x20))
+            .sub(V::splat(b'a'))
+            .subs(V::splat(5));
+        digit.min(letter)
+    }
+}
+
+/// Converts the hex digits of `chunk` to nibbles with Muła & Langdale's algorithm #3: valid bytes
+/// become `0..=15` and any other byte becomes a value above 15.
+///
+/// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+#[inline(always)]
+unsafe fn decode_kernel<V: Vector>(chunk: V) -> V {
+    unsafe {
+        // Digits '0'..'9' → 0..9, others > 15.
+        let digit = chunk
+            .sub(V::splat(b'9' + 1))
+            .subs(V::splat(6))
+            .sub(V::splat(0xF0));
+        // Letters 'A'..'F' and 'a'..'f' → 10..15, others > 15.
+        let letter = chunk
+            .and(V::splat(0xDF))
+            .sub(V::splat(b'A'))
+            .adds(V::splat(10));
+        digit.min(letter)
+    }
+}
+
+/// Returns whether every nibble from [`decode_kernel`] is valid, that is at most 15.
+#[inline(always)]
+unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
+    unsafe { nibbles.and(V::splat(0xF0)).is_zero() }
+}
+
+/// Encodes `input` to `output` in vectors of `V` with [`encode_unaligned_chunks`].
+///
+/// # Safety
+///
+/// `output` must be at least `2 * input.len()` bytes long, and the CPU must support `V`.
+#[inline(always)]
+#[allow(dead_code)]
+pub(crate) unsafe fn encode_vectors<const UPPER: bool, const UNROLL: usize, V: Vector>(
+    input: &[u8],
+    output: impl Output,
+) {
+    unsafe {
+        encode_unaligned_chunks::<UPPER, UNROLL, V, [V; 2]>(input, output, |chunk| {
+            encode_kernel::<UPPER, V>(chunk)
+        });
+    }
+}
+
+/// Checks `input` in vectors of `V` with [`check_unaligned_chunks`].
+///
+/// # Safety
+///
+/// The CPU must support `V`.
+#[inline(always)]
+#[allow(dead_code)]
+pub(crate) unsafe fn check_vectors<V: Vector>(input: &[u8]) -> bool {
+    check_unaligned_chunks(
+        input,
+        |chunk: V| unsafe { check_kernel(chunk) },
+        |a, b| unsafe { a.or(b) },
+        |invalid| unsafe { invalid.is_zero() },
+    )
+}
+
+/// Checked-decodes `input` to `output` in vectors of `V` with [`decode_checked_unaligned_chunks`].
+///
+/// # Safety
+///
+/// `output` must be exactly `input.len() / 2` bytes long, `input.len()` must be even, and the CPU
+/// must support `V`.
+#[inline(always)]
+#[allow(dead_code)]
+pub(crate) unsafe fn decode_vectors<V: Vector>(input: &[u8], output: impl Output) -> bool {
+    unsafe {
+        decode_checked_unaligned_chunks(
+            input,
+            output,
+            |chunk: V| decode_kernel(chunk),
+            |a, b| a.or(b),
+            |nibbles| decode_all_valid(nibbles),
+            |a, b| V::pack(a, b),
+        )
+    }
+}
+
 /// Encodes `input` to `output` in chunks of `T` using `encode_chunk`.
 ///
 /// Inputs of at least `size_of::<T>()` bytes are encoded in whole chunks, with the last chunk
