@@ -12,14 +12,6 @@ const MIN_DECODE_PIECE: usize = MIN_PIECE * 2;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
-// Mirrors the backend selection in `arch/mod.rs`.
-#[cfg(any(
-    feature = "force-generic",
-    not(any(
-        feature = "portable-simd",
-        all(target_arch = "wasm32", target_feature = "simd128")
-    ))
-))]
 pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
     // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
     // per-byte loop.
@@ -36,12 +28,6 @@ pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: imp
             input = rest;
         }
     }
-    encode_bytes::<UPPER>(input, output);
-}
-
-/// Encodes `input` one byte at a time.
-#[inline]
-unsafe fn encode_bytes<const UPPER: bool>(input: &[u8], mut output: impl Output) {
     for &byte in input {
         let (high, low) = byte2hex::<UPPER>(byte);
         output.write_byte(high);
@@ -252,7 +238,7 @@ pub(crate) unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
 /// Inputs of at least `size_of::<T>()` bytes are encoded in whole chunks, with the last one or two
 /// chunks overlapping the ones before them. Shorter inputs of at least [`MIN_PIECE`] bytes are
 /// encoded in one chunk built from two overlapping loads. Anything shorter is encoded with
-/// [`encode_bytes`].
+/// [`encode`].
 ///
 /// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`,
 /// `FINISH_IN_LOOP` selects whether the loop encodes every whole chunk and an exact multiple of the
@@ -358,7 +344,7 @@ pub(crate) unsafe fn encode_unaligned_chunks<
         });
         debug_assert!(stored.is_some());
     } else {
-        unsafe { encode_bytes::<UPPER>(input, output) };
+        unsafe { encode::<UPPER>(input, output) };
     }
 }
 
