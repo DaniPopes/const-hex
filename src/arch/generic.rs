@@ -286,8 +286,8 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 return;
             }
         } else {
-            // Only with `FINISH_IN_LOOP`: on wasm32 this branch stops `encode` from inlining for fixed-size
-            // inputs.
+            // Only with `FINISH_IN_LOOP`: on wasm32 this branch stops `encode` from inlining for
+            // fixed-size inputs.
             if FINISH_IN_LOOP && len < t * 2 {
                 // One chunk, and a second overlapping it unless `len == t`.
                 unsafe {
