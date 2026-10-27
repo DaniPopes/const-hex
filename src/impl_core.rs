@@ -1,6 +1,6 @@
 //! Modified implementations of unstable libcore functions.
 
-use core::mem::{self, MaybeUninit};
+use core::mem::MaybeUninit;
 
 /// Reinterprets `&mut [T]` as `&mut [MaybeUninit<T>]`.
 ///
@@ -36,15 +36,9 @@ pub(crate) unsafe fn array_assume_init<T, const N: usize>(array: [MaybeUninit<T>
     // * `MaybeUninit<T>` and T are guaranteed to have the same layout
     // * `MaybeUninit` does not drop, so there are no double-frees
     // And thus the conversion is safe
-    unsafe { transpose(array).assume_init() }
-}
-
-/// `MaybeUninit::transpose`
-#[inline(always)]
-unsafe fn transpose<T, const N: usize>(array: [MaybeUninit<T>; N]) -> MaybeUninit<[T; N]> {
     unsafe {
-        mem::transmute_copy::<[MaybeUninit<T>; N], MaybeUninit<[T; N]>>(&mem::ManuallyDrop::new(
-            &array,
-        ))
+        (&array as *const [MaybeUninit<T>; N])
+            .cast::<[T; N]>()
+            .read()
     }
 }

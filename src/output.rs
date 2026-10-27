@@ -22,9 +22,15 @@ pub(crate) trait Output {
 impl Output for &mut [MaybeUninit<u8>] {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
+        let count = bytes.len();
+        let len = self.len();
+        debug_assert!(len >= count);
+        let ptr = <[MaybeUninit<u8>]>::as_mut_ptr(self);
+        // SAFETY: Callers guarantee the output has room for `bytes`, so the copy and the advanced
+        // tail stay within the slice. `bytes` cannot overlap the uninitialized output.
         unsafe {
-            let count = write_bytes_output_slice(self, bytes);
-            advance_slice(self, count);
+            ptr.copy_from_nonoverlapping(bytes.as_ptr().cast(), count);
+            *self = core::slice::from_raw_parts_mut(ptr.add(count), len - count);
         }
     }
 
@@ -37,28 +43,4 @@ impl Output for &mut [MaybeUninit<u8>] {
     fn as_mut_ptr(&mut self) -> *mut u8 {
         <[MaybeUninit<u8>]>::as_mut_ptr(self).cast()
     }
-}
-
-/// # Safety
-///
-/// Caller must guarantee `output.len() >= bytes.len()`.
-#[inline(always)]
-unsafe fn write_bytes_output_slice(output: &mut [MaybeUninit<u8>], bytes: &[u8]) -> usize {
-    let src = bytes.as_ptr().cast::<MaybeUninit<u8>>();
-    let dst = output.as_mut_ptr();
-    let count = bytes.len();
-    debug_assert!(output.len() >= count);
-    // SAFETY: Caller guarantees `output` is at least `count` bytes long.
-    unsafe { dst.copy_from_nonoverlapping(src, count) };
-    count
-}
-
-/// Safety: Caller must guarantee `slice` is long enough, and that `slice` is not concurrently accessed.
-#[inline(always)]
-unsafe fn advance_slice<T>(slice: &mut &mut [T], count: usize) {
-    debug_assert!(slice.len() >= count);
-    let len = slice.len();
-    let ptr = slice.as_mut_ptr();
-    // SAFETY: Caller must guarantee `slice` is long enough, and that `slice` is not concurrently accessed.
-    *slice = core::slice::from_raw_parts_mut(ptr.add(count), len - count);
 }
