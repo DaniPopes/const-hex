@@ -243,9 +243,11 @@ pub(crate) unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
 /// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`,
 /// `FINISH_IN_LOOP` selects whether the loop encodes every whole chunk and an exact multiple of the
 /// chunk size returns without a final step, or the loop stops one chunk early and a single final
-/// step, shared with the short-input tail, always encodes the last chunk. These shapes, and
-/// unrolling, are a per-backend choice because each is the fastest in some code generators and
-/// slower in others (see the callers); `FINISH_IN_LOOP` has no effect with `UNROLL` of `2`.
+/// step, shared with the short-input tail, always encodes the last chunk. With `FINISH_IN_LOOP`,
+/// inputs of at least one chunk and fewer than two skip the loop and use at most two overlapping
+/// chunks. These shapes, and unrolling, are a per-backend choice because each is the fastest in
+/// some code generators and slower in others (see the callers); `FINISH_IN_LOOP` has no effect with
+/// `UNROLL` of `2`.
 ///
 /// # Safety
 ///
@@ -299,6 +301,18 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 return;
             }
         } else {
+            // Only with `FINISH_IN_LOOP`: on wasm32 this branch stops `encode` from inlining for
+            // fixed-size inputs.
+            if FINISH_IN_LOOP && len < t * 2 {
+                // One chunk, and a second overlapping it unless `len == t`.
+                unsafe {
+                    write(op, 0, encode_chunk(read(ip, 0)));
+                    if len > t {
+                        write(op, (len - t) * 2, encode_chunk(read(ip, len - t)));
+                    }
+                }
+                return;
+            }
             let end = unsafe { ip.add(len - t) };
             while p < end || (FINISH_IN_LOOP && p == end) {
                 unsafe {
