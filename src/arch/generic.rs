@@ -70,8 +70,9 @@ pub(crate) trait Vector: Copy {
     /// Returns whether every byte is zero.
     unsafe fn is_zero(self) -> bool;
 
-    /// Loads a vector made of `piece` bytes at `a`, then `piece` bytes at `b`, repeated to fill
-    /// it.
+    /// Loads a vector that starts with `piece` bytes at `a`, then `piece` bytes at `b`. The other
+    /// bytes are unspecified, but must stay valid hex digits for `check`, so they are the pieces
+    /// again or `b'0'`.
     ///
     /// # Safety
     ///
