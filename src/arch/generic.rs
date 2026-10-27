@@ -89,8 +89,13 @@ pub(crate) use impl_vector;
 
 /// Encodes a chunk to hex: the hex digits of its high nibbles interleaved with those of its low
 /// nibbles.
+///
+/// The kernels are `#[inline(always)]` and have no `#[target_feature]`, so a backend must pass
+/// them from closures written inside its `#[target_feature]` function: only those closures inherit
+/// the features that let the intrinsics inline.
 #[inline(always)]
-unsafe fn encode_kernel<const UPPER: bool, V: Vector>(chunk: V) -> [V; 2] {
+#[allow(dead_code)]
+pub(crate) unsafe fn encode_kernel<const UPPER: bool, V: Vector>(chunk: V) -> [V; 2] {
     unsafe {
         let hi = chunk.shr4().hex_digits::<UPPER>();
         let lo = chunk.and(V::splat(0x0f)).hex_digits::<UPPER>();
@@ -104,7 +109,8 @@ unsafe fn encode_kernel<const UPPER: bool, V: Vector>(chunk: V) -> [V; 2] {
 /// subtraction, so the smaller of the two saturating excesses over the limits is zero exactly for
 /// hex digits.
 #[inline(always)]
-unsafe fn check_kernel<V: Vector>(chunk: V) -> V {
+#[allow(dead_code)]
+pub(crate) unsafe fn check_kernel<V: Vector>(chunk: V) -> V {
     unsafe {
         let digit = chunk.sub(V::splat(b'0')).subs(V::splat(9));
         let letter = chunk
@@ -120,7 +126,8 @@ unsafe fn check_kernel<V: Vector>(chunk: V) -> V {
 ///
 /// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline(always)]
-unsafe fn decode_kernel<V: Vector>(chunk: V) -> V {
+#[allow(dead_code)]
+pub(crate) unsafe fn decode_kernel<V: Vector>(chunk: V) -> V {
     unsafe {
         // Digits '0'..'9' → 0..9, others > 15.
         let digit = chunk
@@ -138,63 +145,9 @@ unsafe fn decode_kernel<V: Vector>(chunk: V) -> V {
 
 /// Returns whether every nibble from [`decode_kernel`] is valid, that is at most 15.
 #[inline(always)]
-unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
+#[allow(dead_code)]
+pub(crate) unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
     unsafe { nibbles.and(V::splat(0xF0)).is_zero() }
-}
-
-/// Encodes `input` to `output` in vectors of `V` with [`encode_unaligned_chunks`].
-///
-/// # Safety
-///
-/// `output` must be at least `2 * input.len()` bytes long, and the CPU must support `V`.
-#[inline(always)]
-#[allow(dead_code)]
-pub(crate) unsafe fn encode_vectors<const UPPER: bool, const UNROLL: usize, V: Vector>(
-    input: &[u8],
-    output: impl Output,
-) {
-    unsafe {
-        encode_unaligned_chunks::<UPPER, UNROLL, V, [V; 2]>(input, output, |chunk| {
-            encode_kernel::<UPPER, V>(chunk)
-        });
-    }
-}
-
-/// Checks `input` in vectors of `V` with [`check_unaligned_chunks`].
-///
-/// # Safety
-///
-/// The CPU must support `V`.
-#[inline(always)]
-#[allow(dead_code)]
-pub(crate) unsafe fn check_vectors<V: Vector>(input: &[u8]) -> bool {
-    check_unaligned_chunks(
-        input,
-        |chunk: V| unsafe { check_kernel(chunk) },
-        |a, b| unsafe { a.or(b) },
-        |invalid| unsafe { invalid.is_zero() },
-    )
-}
-
-/// Checked-decodes `input` to `output` in vectors of `V` with [`decode_checked_unaligned_chunks`].
-///
-/// # Safety
-///
-/// `output` must be exactly `input.len() / 2` bytes long, `input.len()` must be even, and the CPU
-/// must support `V`.
-#[inline(always)]
-#[allow(dead_code)]
-pub(crate) unsafe fn decode_vectors<V: Vector>(input: &[u8], output: impl Output) -> bool {
-    unsafe {
-        decode_checked_unaligned_chunks(
-            input,
-            output,
-            |chunk: V| decode_kernel(chunk),
-            |a, b| a.or(b),
-            |nibbles| decode_all_valid(nibbles),
-            |a, b| V::pack(a, b),
-        )
-    }
 }
 
 /// Encodes `input` to `output` in chunks of `T` using `encode_chunk`.

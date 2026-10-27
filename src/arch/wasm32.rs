@@ -8,20 +8,34 @@ use core::mem::MaybeUninit;
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_vectors::<UPPER, 1, v128>(input, output);
+    generic::encode_unaligned_chunks::<UPPER, 1, _, _>(input, output, |chunk: v128| {
+        generic::encode_kernel::<UPPER, _>(chunk)
+    });
 }
 
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) fn check(input: &[u8]) -> bool {
-    unsafe { generic::check_vectors::<v128>(input) }
+    generic::check_unaligned_chunks(
+        input,
+        |chunk: v128| unsafe { generic::check_kernel(chunk) },
+        |a, b| unsafe { a.or(b) },
+        |invalid| unsafe { invalid.is_zero() },
+    )
 }
 
 /// Single-pass hex decode with validation.
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
-    generic::decode_vectors::<v128>(input, output)
+    generic::decode_checked_unaligned_chunks(
+        input,
+        output,
+        |chunk: v128| generic::decode_kernel(chunk),
+        |a, b| a.or(b),
+        |nibbles| generic::decode_all_valid(nibbles),
+        |a, b| v128::pack(a, b),
+    )
 }
 
 generic::impl_vector! {

@@ -8,16 +8,30 @@ use core::simd::prelude::*;
 type Simd = u8x16;
 
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_vectors::<UPPER, 2, Simd>(input, output);
+    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |chunk: Simd| {
+        generic::encode_kernel::<UPPER, _>(chunk)
+    });
 }
 
 pub(crate) fn check(input: &[u8]) -> bool {
-    unsafe { generic::check_vectors::<Simd>(input) }
+    generic::check_unaligned_chunks(
+        input,
+        |chunk: Simd| unsafe { generic::check_kernel(chunk) },
+        |a, b| unsafe { a.or(b) },
+        |invalid| unsafe { invalid.is_zero() },
+    )
 }
 
 /// Single-pass hex decode with validation.
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
-    generic::decode_vectors::<Simd>(input, output)
+    generic::decode_checked_unaligned_chunks(
+        input,
+        output,
+        |chunk: Simd| generic::decode_kernel(chunk),
+        |a, b| a.or(b),
+        |nibbles| generic::decode_all_valid(nibbles),
+        |a, b| Simd::pack(a, b),
+    )
 }
 
 generic::impl_vector! {

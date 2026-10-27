@@ -58,12 +58,16 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 #[inline(never)]
 #[target_feature(enable = "avx2")]
 unsafe fn encode_avx2<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_vectors::<UPPER, 2, __m256i>(input, output);
+    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |chunk: __m256i| {
+        generic::encode_kernel::<UPPER, _>(chunk)
+    });
 }
 
 #[target_feature(enable = "ssse3")]
 unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_vectors::<UPPER, 2, __m128i>(input, output);
+    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |chunk: __m128i| {
+        generic::encode_kernel::<UPPER, _>(chunk)
+    });
 }
 
 /// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
@@ -163,7 +167,14 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
 /// be even.
 #[target_feature(enable = "avx2")]
 unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
-    generic::decode_vectors::<__m256i>(input, output)
+    generic::decode_checked_unaligned_chunks(
+        input,
+        output,
+        |chunk: __m256i| generic::decode_kernel(chunk),
+        |a, b| a.or(b),
+        |nibbles| generic::decode_all_valid(nibbles),
+        |a, b| __m256i::pack(a, b),
+    )
 }
 
 /// # Safety
@@ -172,7 +183,14 @@ unsafe fn decode_checked_avx2(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
 /// be even.
 #[target_feature(enable = "ssse3")]
 unsafe fn decode_checked_ssse3(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
-    generic::decode_vectors::<__m128i>(input, output)
+    generic::decode_checked_unaligned_chunks(
+        input,
+        output,
+        |chunk: __m128i| generic::decode_kernel(chunk),
+        |a, b| a.or(b),
+        |nibbles| generic::decode_all_valid(nibbles),
+        |a, b| __m128i::pack(a, b),
+    )
 }
 
 generic::impl_vector! {
