@@ -29,7 +29,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 1, _, _>(input, output, |chunk: uint8x16_t| {
+    generic::encode_unaligned_chunks::<UPPER, 1, _>(input, output, |chunk: uint8x16_t| {
         generic::encode_kernel::<UPPER, _>(chunk)
     });
 }

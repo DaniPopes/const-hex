@@ -8,7 +8,7 @@ use core::mem::MaybeUninit;
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 1, _, _>(input, output, |chunk: v128| {
+    generic::encode_unaligned_chunks::<UPPER, 1, _>(input, output, |chunk: v128| {
         generic::encode_kernel::<UPPER, _>(chunk)
     });
 }
@@ -84,5 +84,29 @@ generic::impl_vector! {
     #[inline(always)]
     unsafe fn is_zero(self) -> bool {
         !v128_any_true(self)
+    }
+
+    /// The pieces are loaded into lanes, which compiles to fewer instructions than going through
+    /// memory. The unused lanes of 4-byte pieces are `b'0'`, which is a valid hex digit.
+    #[inline(always)]
+    unsafe fn load_pair(a: *const u8, b: *const u8, piece: usize) -> Self {
+        if piece == 8 {
+            v128_load64_lane::<1>(v128_load64_zero(a.cast()), b.cast())
+        } else {
+            debug_assert_eq!(piece, 4);
+            v128_load32_lane::<1>(v128_load32_lane::<0>(u8x16_splat(b'0'), a.cast()), b.cast())
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn store_pair(self, a: *mut u8, b: *mut u8, len: usize) {
+        if len == 8 {
+            v128_store64_lane::<0>(self, a.cast());
+            v128_store64_lane::<1>(self, b.cast());
+        } else {
+            debug_assert_eq!(len, 4);
+            v128_store32_lane::<0>(self, a.cast());
+            v128_store32_lane::<1>(self, b.cast());
+        }
     }
 }

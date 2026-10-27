@@ -8,7 +8,7 @@ use core::simd::prelude::*;
 type Simd = u8x16;
 
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |chunk: Simd| {
+    generic::encode_unaligned_chunks::<UPPER, 2, _>(input, output, |chunk: Simd| {
         generic::encode_kernel::<UPPER, _>(chunk)
     });
 }

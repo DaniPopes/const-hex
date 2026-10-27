@@ -65,6 +65,54 @@ pub(crate) trait Vector: Copy {
 
     /// Returns whether every byte is zero.
     unsafe fn is_zero(self) -> bool;
+
+    /// Loads a vector made of `piece` bytes at `a`, then `piece` bytes at `b`, repeated to fill
+    /// it.
+    #[inline(always)]
+    unsafe fn load_pair(a: *const u8, b: *const u8, piece: usize) -> Self {
+        let mut chunk = MaybeUninit::<Self>::uninit();
+        let dst = chunk.as_mut_ptr().cast::<u8>();
+        if piece == 4 {
+            // Combining the pieces as integers keeps LLVM from merging the two loads into a
+            // gather.
+            let (x, y) = unsafe {
+                (
+                    u64::from(a.cast::<u32>().read_unaligned()),
+                    u64::from(b.cast::<u32>().read_unaligned()),
+                )
+            };
+            let pair = if cfg!(target_endian = "little") {
+                x | y << 32
+            } else {
+                x << 32 | y
+            };
+            let mut i = 0;
+            while i < size_of::<Self>() {
+                unsafe { dst.add(i).cast::<u64>().write_unaligned(pair) };
+                i += 8;
+            }
+        } else {
+            let mut i = 0;
+            while i < size_of::<Self>() {
+                unsafe {
+                    a.copy_to_nonoverlapping(dst.add(i), piece);
+                    b.copy_to_nonoverlapping(dst.add(i + piece), piece);
+                }
+                i += piece * 2;
+            }
+        }
+        unsafe { chunk.assume_init() }
+    }
+
+    /// Stores the first `len` bytes at `a`, and the next `len` bytes at `b`.
+    #[inline(always)]
+    unsafe fn store_pair(self, a: *mut u8, b: *mut u8, len: usize) {
+        let src = (&self as *const Self).cast::<u8>();
+        unsafe {
+            src.copy_to_nonoverlapping(a, len);
+            src.add(len).copy_to_nonoverlapping(b, len);
+        }
+    }
 }
 
 /// Implements [`Vector`] for `$ty`. Each `$method = $f` defines a method that returns
@@ -164,18 +212,12 @@ pub(crate) unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
 /// `output` must be at least `2 * input.len()` bytes long.
 #[inline]
 #[allow(dead_code)]
-pub(crate) unsafe fn encode_unaligned_chunks<
-    const UPPER: bool,
-    const UNROLL: usize,
-    T: Copy,
-    U: Copy,
->(
+pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, const UNROLL: usize, T: Vector>(
     input: &[u8],
     mut output: impl Output,
-    encode_chunk: impl Fn(T) -> U,
+    encode_chunk: impl Fn(T) -> [T; 2],
 ) {
     const { assert!(UNROLL == 1 || UNROLL == 2) };
-    debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
     let len = input.len();
     debug_assert!(output.remaining().is_none_or(|n| n >= len * 2));
     let ip = input.as_ptr();
@@ -231,22 +273,20 @@ pub(crate) unsafe fn encode_unaligned_chunks<
         } else {
             unsafe { load_tail(ip, len, t / 2) }
         };
-        let encoded = encode_chunk(chunk);
+        let [x, y] = encode_chunk(chunk);
         unsafe {
-            store_pair(
-                encoded,
-                op.add((len * 2).saturating_sub(t * 2)),
-                op.add(len * 2 - t),
-                t,
-            )
-        };
+            write(op, (len * 2).saturating_sub(t * 2), x);
+            write(op, len * 2 - t, y);
+        }
     } else if let Some(chunk) =
         by_piece::<T, MIN_PIECE, _>(len, |p| unsafe { load_tail(ip, len, p) })
     {
-        let encoded = encode_chunk(chunk);
+        // The pieces are at most a quarter of a chunk, so their encoded halves are in the first
+        // vector.
+        let [encoded, _] = encode_chunk(chunk);
         let stored = by_piece::<T, MIN_PIECE, _>(len, |p| unsafe {
             let (a, b) = tail_offsets(len, p);
-            store_pair(encoded, op.add(a * 2), op.add(b * 2), p * 2)
+            encoded.store_pair(op.add(a * 2), op.add(b * 2), p * 2)
         });
         debug_assert!(stored.is_some());
     } else {
@@ -326,7 +366,7 @@ const fn check_u64_mask(x: u64) -> u64 {
 /// in one chunk built from two overlapping loads. Anything shorter is passed to [`check`].
 #[inline]
 #[allow(dead_code)]
-pub(crate) fn check_unaligned_chunks<T: Copy, M: Copy>(
+pub(crate) fn check_unaligned_chunks<T: Vector, M: Copy>(
     input: &[u8],
     valid: impl Fn(T) -> M,
     combine: impl Fn(M, M) -> M,
@@ -429,7 +469,7 @@ pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bo
 /// the tails overlap on whole hex pairs.
 #[inline]
 #[allow(dead_code)]
-pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Copy, N: Copy, T: Copy>(
+pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Vector, N: Copy, T: Vector>(
     input: &[u8],
     mut output: impl Output,
     nibbles: impl Fn(V) -> N,
@@ -484,7 +524,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Copy, N: Copy, T: Copy>(
                 if len >= v * 2 {
                     write(op, a / 2, pack(n0, n1));
                 } else {
-                    store_pair(pack(n0, n1), op.add(a / 2), op.add(b / 2), v / 2);
+                    pack(n0, n1).store_pair(op.add(a / 2), op.add(b / 2), v / 2);
                 }
             } else if rem > 0 {
                 // The last vector, overlapping what is already decoded.
@@ -505,7 +545,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Copy, N: Copy, T: Copy>(
         let decoded = pack(n, n);
         let stored = by_piece::<V, MIN_DECODE_PIECE, _>(len, |p| unsafe {
             let (a, b) = tail_offsets(len, p);
-            store_pair(decoded, op.add(a / 2), op.add(b / 2), p / 2)
+            decoded.store_pair(op.add(a / 2), op.add(b / 2), p / 2)
         });
         debug_assert!(stored.is_some());
         true
@@ -553,47 +593,11 @@ const fn tail_offsets(len: usize, piece: usize) -> (usize, usize) {
     (len.saturating_sub(piece * 2), len - piece)
 }
 
-/// Loads the pieces of the last chunk of `len` bytes into a `T` with [`load_pair`].
+/// Loads the pieces of the last chunk of `len` bytes into a `T` with [`Vector::load_pair`].
 #[inline(always)]
-unsafe fn load_tail<T: Copy>(ip: *const u8, len: usize, piece: usize) -> T {
+unsafe fn load_tail<T: Vector>(ip: *const u8, len: usize, piece: usize) -> T {
     let (a, b) = tail_offsets(len, piece);
-    unsafe { load_pair(ip.add(a), ip.add(b), piece) }
-}
-
-/// Loads a `T` made of `piece` bytes at `a`, then `piece` bytes at `b`, repeated to fill `T`.
-#[inline(always)]
-unsafe fn load_pair<T: Copy>(a: *const u8, b: *const u8, piece: usize) -> T {
-    let mut chunk = MaybeUninit::<T>::uninit();
-    let dst = chunk.as_mut_ptr().cast::<u8>();
-    if piece == 4 {
-        // Combining the pieces as integers keeps LLVM from merging the two loads into a gather.
-        let (x, y) = unsafe {
-            (
-                u64::from(a.cast::<u32>().read_unaligned()),
-                u64::from(b.cast::<u32>().read_unaligned()),
-            )
-        };
-        let pair = if cfg!(target_endian = "little") {
-            x | y << 32
-        } else {
-            x << 32 | y
-        };
-        let mut i = 0;
-        while i < size_of::<T>() {
-            unsafe { dst.add(i).cast::<u64>().write_unaligned(pair) };
-            i += 8;
-        }
-    } else {
-        let mut i = 0;
-        while i < size_of::<T>() {
-            unsafe {
-                a.copy_to_nonoverlapping(dst.add(i), piece);
-                b.copy_to_nonoverlapping(dst.add(i + piece), piece);
-            }
-            i += piece * 2;
-        }
-    }
-    unsafe { chunk.assume_init() }
+    unsafe { T::load_pair(ip.add(a), ip.add(b), piece) }
 }
 
 /// Stores the first `len` bytes of `chunk` at `dst`.
@@ -603,15 +607,5 @@ const unsafe fn store_prefix<T: Copy>(chunk: T, dst: *mut u8, len: usize) {
         (&chunk as *const T)
             .cast::<u8>()
             .copy_to_nonoverlapping(dst, len)
-    }
-}
-
-/// Stores the first `len` bytes of `chunk` at `a`, and the next `len` bytes at `b`.
-#[inline(always)]
-const unsafe fn store_pair<T: Copy>(chunk: T, a: *mut u8, b: *mut u8, len: usize) {
-    let src = (&chunk as *const T).cast::<u8>();
-    unsafe {
-        src.copy_to_nonoverlapping(a, len);
-        src.add(len).copy_to_nonoverlapping(b, len);
     }
 }
