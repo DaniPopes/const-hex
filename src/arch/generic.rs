@@ -27,7 +27,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 /// one chunk built from two overlapping loads. Anything shorter is encoded with [`encode`].
 ///
 /// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. Unrolling twice
-/// avoids a layout-dependent slowdown on x86, but is slower elsewhere.
+/// avoids a layout-dependent slowdown on x86 and portable-simd, but is slower on aarch64 and wasm32.
 ///
 /// # Safety
 ///
@@ -78,12 +78,9 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 }
                 return;
             }
-            if done == len {
-                return;
-            }
         } else {
             let end = unsafe { ip.add(len - t) };
-            while p < end {
+            while p <= end {
                 unsafe {
                     write(o, 0, encode_chunk(read(p, 0)));
                     p = p.add(t);
@@ -91,28 +88,39 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 }
             }
         }
+        if p as usize - ip as usize == len {
+            return;
+        }
     }
 
-    // The last chunk, which overlaps the one before it unless the input is shorter than a chunk.
-    let chunk = if len >= t {
-        unsafe { read(ip, len - t) }
+    // The last chunk, ending at `len`. Below one chunk it is built from two overlapping half-chunk
+    // loads, and either way its encoded halves are stored so they end at `len * 2`.
+    if len >= t / 2 {
+        let chunk = if len >= t {
+            unsafe { read(ip, len - t) }
+        } else {
+            unsafe { load_tail(ip, len, t / 2) }
+        };
+        let encoded = encode_chunk(chunk);
+        unsafe {
+            store_pair(
+                encoded,
+                op.add((len * 2).saturating_sub(t * 2)),
+                op.add(len * 2 - t),
+                t,
+            )
+        };
     } else if let Some(chunk) =
         by_piece::<T, MIN_PIECE, _>(len, |p| unsafe { load_tail(ip, len, p) })
     {
-        chunk
-    } else {
-        return unsafe { encode::<UPPER>(input, output) };
-    };
-    let encoded = encode_chunk(chunk);
-    if len >= t {
-        unsafe { write(op, (len - t) * 2, encoded) };
-    } else {
+        let encoded = encode_chunk(chunk);
         let stored = by_piece::<T, MIN_PIECE, _>(len, |p| unsafe {
             let (a, b) = tail_offsets(len, p);
             store_pair(encoded, op.add(a * 2), op.add(b * 2), p * 2)
         });
-        // SAFETY: The loads above found a piece size for this length.
-        unsafe { stored.unwrap_unchecked() };
+        debug_assert!(stored.is_some());
+    } else {
+        unsafe { encode::<UPPER>(input, output) };
     }
 }
 
@@ -369,8 +377,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Copy, N: Copy, T: Copy>(
             let (a, b) = tail_offsets(len, p);
             store_pair(decoded, op.add(a / 2), op.add(b / 2), p / 2)
         });
-        // SAFETY: The loads above found a piece size for this length.
-        unsafe { stored.unwrap_unchecked() };
+        debug_assert!(stored.is_some());
         true
     } else {
         unsafe { decode_checked(input, output) }
