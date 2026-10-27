@@ -100,7 +100,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             flags: -Fstd
             rustflags: -Ctarget-feature=+avx2
-          # The same for the SSSE3 kernels, which AVX2 takes over on most CPUs. `-Fserde` is a no-op.
+          # The same for the SSSE3 kernels, which Miri selects when AVX2 is not enabled. `-Fserde` is a no-op.
           - target: x86_64-unknown-linux-gnu
             flags: -Fserde
             rustflags: -Ctarget-feature=+ssse3

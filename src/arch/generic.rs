@@ -23,8 +23,12 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 /// A SIMD vector of bytes, with the operations the SIMD kernels below are built from.
 ///
 /// Each backend implements this for its vector type and passes the kernels to the chunk helpers.
+///
+/// # Safety
+///
 /// Every method is `unsafe` because an implementation may need a CPU feature that the caller must
-/// have enabled.
+/// have enabled: `hex_digits` and `pack` of `__m128i` need SSSE3, and every method of `__m256i`
+/// needs AVX2.
 #[allow(dead_code)]
 pub(crate) trait Vector: Copy {
     /// Returns a vector with every byte set to `x`.
@@ -60,7 +64,7 @@ pub(crate) trait Vector: Copy {
     /// Joins pairs of nibbles into bytes: the even bytes of `a` then `b` are the high nibbles and
     /// the odd bytes the low nibbles, and the result is the bytes of `a` followed by those of `b`.
     ///
-    /// Each byte must be at most 15.
+    /// Each byte must be at most 15, unless the implementation says that it accepts more.
     unsafe fn pack(a: Self, b: Self) -> Self;
 
     /// Returns whether every byte is zero.
@@ -68,6 +72,11 @@ pub(crate) trait Vector: Copy {
 
     /// Loads a vector made of `piece` bytes at `a`, then `piece` bytes at `b`, repeated to fill
     /// it.
+    ///
+    /// # Safety
+    ///
+    /// `a` and `b` must be valid for reads of `piece` bytes, and `piece` must be a power of two
+    /// from 4 up to half the size of the vector.
     #[inline(always)]
     unsafe fn load_pair(a: *const u8, b: *const u8, piece: usize) -> Self {
         let mut chunk = MaybeUninit::<Self>::uninit();
@@ -105,6 +114,11 @@ pub(crate) trait Vector: Copy {
     }
 
     /// Stores the first `len` bytes at `a`, and the next `len` bytes at `b`.
+    ///
+    /// # Safety
+    ///
+    /// `a` and `b` must be valid for writes of `len` bytes, and `2 * len` must not exceed the size
+    /// of the vector.
     #[inline(always)]
     unsafe fn store_pair(self, a: *mut u8, b: *mut u8, len: usize) {
         let src = (&self as *const Self).cast::<u8>();
