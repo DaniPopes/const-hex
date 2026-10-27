@@ -11,7 +11,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
     // Load table.
     let hex_table = Simd::from_array(*get_chars_table::<UPPER>());
 
-    generic::encode_unaligned_chunks::<UPPER, 1, _, _>(input, output, |chunk: Simd| {
+    generic::encode_unaligned_chunks::<UPPER, 2, _, _>(input, output, |chunk: Simd| {
         // Load input bytes and mask to nibbles.
         let mut lo = chunk & Simd::splat(15);
         let mut hi = chunk >> Simd::splat(4);
