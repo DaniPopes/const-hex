@@ -382,8 +382,8 @@ fn decode_simd_boundaries() {
 #[cfg(feature = "alloc")]
 fn decode_all_nibbles_simd_boundaries() {
     for size in [1, 7, 8, 16, 17, 32, 33, 64, 65, 129] {
-        // Multiplying by 37 spreads the bytes over every high and low nibble from size 64 up;
-        // 17 repeats each nibble in both halves of the byte, so it does from size 16 up.
+        // 37 reaches every high and low nibble from size 49 up. 17 makes the first 16 bytes
+        // 00, 11, .., ff, so it does from size 16 up.
         for multiplier in [37, 17] {
             let bytes: Vec<u8> = (0..size)
                 .map(|i| (i as u8).wrapping_mul(multiplier))
