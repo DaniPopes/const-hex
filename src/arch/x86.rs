@@ -156,6 +156,20 @@ pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]
         _ if has_ssse3() => decode_checked_ssse3(input, output),
         _ => generic::decode_checked(input, output),
     }
+    decode_checked_fallback(input, output)
+}
+
+/// Decodes without AVX2, out of line so that the callers of [`decode_checked`] inline only the
+/// AVX2 dispatch.
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even.
+#[inline(never)]
+unsafe fn decode_checked_fallback(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
+    if has_ssse3() {
+        return decode_checked_ssse3(input, output);
+    }
 }
 
 /// # Safety
