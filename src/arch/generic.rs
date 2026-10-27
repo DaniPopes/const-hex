@@ -12,7 +12,22 @@ const MIN_DECODE_PIECE: usize = MIN_PIECE * 2;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Output) {
+pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
+    // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
+    // per-byte loop.
+    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
+        // Encodes 4 bytes into 8 hex digits in memory order.
+        while let &[a, b, c, d, ref rest @ ..] = input {
+            // Split each byte into its high and low nibble.
+            let x = u64::from_le_bytes([a, 0, b, 0, c, 0, d, 0]);
+            let n = ((x >> 4) | (x << 8)) & (ONES * 0x0F);
+            // Nibbles 10..=15 get the extra offset from '9' + 1 to 'a' (or 'A').
+            let gt9 = ((n + ONES * 6) >> 4) & ONES;
+            let chunk = n + ONES * b'0' as u64 + gt9 * if UPPER { 7 } else { 39 };
+            output.write(&chunk.to_le_bytes());
+            input = rest;
+        }
+    }
     for &byte in input {
         let (high, low) = byte2hex::<UPPER>(byte);
         output.write_byte(high);

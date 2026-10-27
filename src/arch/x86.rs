@@ -70,15 +70,7 @@ unsafe fn encode_ssse3<const UPPER: bool>(input: &[u8], output: impl Output) {
     });
 }
 
-/// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
-/// then a single `cmpgt(start + len, x)` checks if `x` falls within the range.
-///
-/// - Digits '0'..'9' (0x30..0x39): bias by 0xB0 maps to -128..-119, threshold -118 (10 values).
-/// - Letters 'A'..'F' (0x41..0x46): bias by 0xC1 maps to -128..-123, threshold -122 (6 values).
-///   Case folded with 0xDF mask so 'a'..'f' is handled identically.
-///
-/// Based on Muła & Langdale:
-/// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
+/// Checks that every byte is an ASCII hex digit.
 #[inline]
 pub(crate) fn check(input: &[u8]) -> bool {
     match () {
@@ -91,27 +83,35 @@ pub(crate) fn check(input: &[u8]) -> bool {
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn check_avx2(input: &[u8]) -> bool {
-    let digit_bias = _mm256_set1_epi8(0xB0_u8 as i8); // '0' + 0x80
-    let alpha_bias = _mm256_set1_epi8(0xC1_u8 as i8); // 'A' + 0x80
-    let case_mask = _mm256_set1_epi8(0xDF_u8 as i8);
-    let digit_threshold = _mm256_set1_epi8(-118); // i8::MIN + 10
-    let alpha_threshold = _mm256_set1_epi8(-122); // i8::MIN + 6
-
-    let valid = |chunk: __m256i| {
-        let x1 = _mm256_sub_epi8(chunk, digit_bias);
-        let m1 = _mm256_cmpgt_epi8(digit_threshold, x1);
-
-        let x2 = _mm256_sub_epi8(_mm256_and_si256(chunk, case_mask), alpha_bias);
-        let m2 = _mm256_cmpgt_epi8(alpha_threshold, x2);
-
-        _mm256_or_si256(m1, m2)
-    };
+    let zero = _mm256_setzero_si256();
 
     generic::check_unaligned_chunks(
         input,
-        valid,
-        |a, b| _mm256_and_si256(a, b),
-        |mask| _mm256_movemask_epi8(mask) == -1,
+        |chunk| valid_avx2(chunk),
+        |a, b| _mm256_min_epu8(a, b),
+        |valid| _mm256_movemask_epi8(_mm256_cmpeq_epi8(valid, zero)) == 0,
+    )
+}
+
+/// Classifies bytes with a nibble lookup: a byte is valid iff `LO[b & 0xf] & HI[b >> 4] != 0`.
+/// The result is zero in every invalid byte and nonzero in every valid byte.
+///
+/// Bit 0 of `HI` marks the digit row (high nibble 3) and bit 1 the letter rows (high nibbles 4
+/// and 6). `LO` has bit 0 set for low nibbles 0..=9 and bit 1 for 1..=6. Bytes `>= 0x80` index
+/// `LO` with a set top bit, which `pshufb` maps to 0, so they are never valid.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn valid_avx2(chunk: __m256i) -> __m256i {
+    let lo_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        1, 3, 3, 3, 3, 3, 3, 1, 1, 1, 0, 0, 0, 0, 0, 0,
+    ));
+    let hi_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ));
+
+    _mm256_and_si256(
+        _mm256_shuffle_epi8(lo_lut, chunk),
+        _mm256_shuffle_epi8(hi_lut, chunk.shr4()),
     )
 }
 
@@ -125,6 +125,15 @@ unsafe fn check_sse2(input: &[u8]) -> bool {
     )
 }
 
+/// Hex check using signed overflow trick: bias each valid range so it starts at `i8::MIN`,
+/// then a single `cmpgt(start + len, x)` checks if `x` falls within the range.
+///
+/// - Digits '0'..'9' (0x30..0x39): bias by 0xB0 maps to -128..-119, threshold -118 (10 values).
+/// - Letters 'A'..'F' (0x41..0x46): bias by 0xC1 maps to -128..-123, threshold -122 (6 values).
+///   Case folded with 0xDF mask so 'a'..'f' is handled identically.
+///
+/// Based on Muła & Langdale:
+/// <http://0x80.pl/notesen/2022-01-17-validating-hex-parse.html>
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn valid_sse2(chunk: __m128i) -> __m128i {
