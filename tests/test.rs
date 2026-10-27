@@ -382,20 +382,24 @@ fn decode_simd_boundaries() {
 #[cfg(feature = "alloc")]
 fn decode_all_nibbles_simd_boundaries() {
     for size in [1, 7, 8, 16, 17, 32, 33, 64, 65, 129] {
-        // Multiplying spreads the bytes over every high and low nibble from size 64 up.
-        let bytes: Vec<u8> = (0..size).map(|i| (i as u8).wrapping_mul(37)).collect();
-        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        // Multiplying by 37 spreads the bytes over every high and low nibble from size 64 up;
+        // 17 repeats each nibble in both halves of the byte, so it does from size 16 up.
+        for multiplier in [37, 17] {
+            let bytes: Vec<u8> = (0..size)
+                .map(|i| (i as u8).wrapping_mul(multiplier))
+                .collect();
 
-        assert_eq!(
-            const_hex::decode(&hex).unwrap(),
-            bytes,
-            "lower, size {size}"
-        );
-        assert_eq!(
-            const_hex::decode(hex.to_uppercase()).unwrap(),
-            bytes,
-            "upper, size {size}"
-        );
+            assert_eq!(
+                const_hex::decode(hex::encode(&bytes)).unwrap(),
+                bytes,
+                "lower, size {size}, multiplier {multiplier}"
+            );
+            assert_eq!(
+                const_hex::decode(hex::encode_upper(&bytes)).unwrap(),
+                bytes,
+                "upper, size {size}, multiplier {multiplier}"
+            );
+        }
     }
 }
 
@@ -408,18 +412,26 @@ fn decode_all_invalid_chars() {
         &[1, 4, 8, 16, 32, 64, 65]
     };
     for &size in sizes {
-        let hex = "1".repeat(size * 2);
+        let mut input = vec![b'1'; size * 2];
         for pos in [0, size - 1, size, size * 2 - 1] {
             for c in 0u8..=255 {
-                let mut input = hex.clone().into_bytes();
                 input[pos] = c;
-                let is_valid = c.is_ascii_hexdigit();
-                assert_eq!(
-                    const_hex::decode(&input).is_ok(),
-                    is_valid,
-                    "size {size} pos {pos} char 0x{c:02x}"
-                );
+                match const_hex::decode(&input) {
+                    Ok(_) => assert!(
+                        c.is_ascii_hexdigit(),
+                        "size {size} pos {pos} char 0x{c:02x} was accepted"
+                    ),
+                    Err(error) => assert_eq!(
+                        error,
+                        const_hex::FromHexError::InvalidHexCharacter {
+                            c: c as char,
+                            index: pos
+                        },
+                        "size {size} pos {pos} char 0x{c:02x}"
+                    ),
+                }
             }
+            input[pos] = b'1';
         }
     }
 }
@@ -455,7 +467,7 @@ fn encode_to_slice_simd_boundaries() {
     }
 }
 
-/// `Buffer::format` and `display` encode into uninitialized buffers.
+/// `Buffer::format`, `format_upper` and `display` match `hex::encode` at every boundary size.
 #[test]
 fn encode_simd_boundaries_buffer_display() {
     fn buffer<const N: usize>(input: &[u8]) {
