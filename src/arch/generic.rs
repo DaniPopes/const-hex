@@ -22,9 +22,10 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 
 /// Encodes `input` to `output` in chunks of `T` using `encode_chunk`.
 ///
-/// Inputs of at least `size_of::<T>()` bytes are encoded in whole chunks, and with `UNROLL` of `2`
-/// the last one or two chunks overlap the ones before them. Shorter inputs of at least [`MIN_PIECE`] bytes are encoded in
-/// one chunk built from two overlapping loads. Anything shorter is encoded with [`encode`].
+/// Inputs of at least `size_of::<T>()` bytes are encoded in whole chunks, with the last one or two
+/// chunks overlapping the ones before them. Shorter inputs of at least [`MIN_PIECE`] bytes are
+/// encoded in one chunk built from two overlapping loads. Anything shorter is encoded with
+/// [`encode`].
 ///
 /// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`,
 /// `FINISH_IN_LOOP` selects whether the loop encodes every whole chunk and an exact multiple of the
@@ -99,7 +100,7 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 if p.addr() - ip.addr() == len {
                     return;
                 }
-                // The last chunk, overlapping what is already encoded, if anything.
+                // The last chunk, overlapping what is already encoded.
                 unsafe { write(op, (len - t) * 2, encode_chunk(read(ip, len - t))) };
                 return;
             }
@@ -230,8 +231,8 @@ pub(crate) fn check_unaligned_chunks<T: Copy, M: Copy>(
         }
         let rem = len - (p.addr() - ip.addr());
         if rem > t * 2 {
-            // The last four chunks, overlapping each other or what is already checked. The first two chunks
-            // start at the beginning of the input if it is shorter than four chunks.
+            // The last four chunks, overlapping each other or what is already checked. The first
+            // two chunks start at the beginning of the input if it is shorter than four chunks.
             let a = len.saturating_sub(t * 4);
             let (v01, v23) = (
                 combine(
@@ -343,8 +344,9 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Copy, N: Copy, T: Copy>(
             }
             let rem = len - (p.addr() - ip.addr());
             if rem > v * 2 {
-                // The last four vectors, overlapping each other or what is already decoded. The first two
-                // vectors start at the beginning of the input if it is shorter than four vectors.
+                // The last four vectors, overlapping each other or what is already decoded. The
+                // first two vectors start at the beginning of the input if it is shorter than four
+                // vectors.
                 let a = len.saturating_sub(v * 4);
                 let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, a + v)));
                 let (n2, n3) = (nibbles(read(ip, len - v * 2)), nibbles(read(ip, len - v)));
