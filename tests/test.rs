@@ -358,7 +358,7 @@ fn decode_simd_boundaries() {
         const_hex::decode_to_slice(&hex, &mut output).unwrap();
         assert_eq!(output, bytes, "decode_to_slice mismatch at size {size}");
 
-        // Miri is slow, and CI's Miri jobs don't enable AVX2, so only test the edges there.
+        // Miri is slow, so only test the edges there.
         let positions = if cfg!(miri) {
             vec![0, hex.len() - 1]
         } else {

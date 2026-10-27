@@ -215,9 +215,10 @@ pub(crate) unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
 
 /// Encodes `input` to `output` in chunks of `T` using `encode_chunk`.
 ///
-/// Inputs of at least `size_of::<T>()` bytes are encoded in whole chunks, with the last chunk
-/// overlapping the one before it. Shorter inputs of at least [`MIN_PIECE`] bytes are encoded in
-/// one chunk built from two overlapping loads. Anything shorter is encoded with [`encode`].
+/// Inputs of at least `size_of::<T>()` bytes are encoded in whole chunks, with the last one or two
+/// chunks overlapping the ones before them. Shorter inputs of at least [`MIN_PIECE`] bytes are
+/// encoded in one chunk built from two overlapping loads. Anything shorter is encoded with
+/// [`encode`].
 ///
 /// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`,
 /// `FINISH_IN_LOOP` selects whether the loop encodes every whole chunk and an exact multiple of the
@@ -263,9 +264,9 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                     }
                 }
             }
-            let done = p as usize - ip as usize;
+            let done = p.addr() - ip.addr();
             if len - done > t {
-                // The last two chunks, overlapping what is already encoded.
+                // The last two chunks, overlapping each other or what is already encoded.
                 let (a, b) = tail_offsets(len, t);
                 unsafe {
                     let (u0, u1) = (encode_chunk(read(ip, a)), encode_chunk(read(ip, b)));
@@ -279,27 +280,20 @@ pub(crate) unsafe fn encode_unaligned_chunks<
             }
         } else {
             let end = unsafe { ip.add(len - t) };
-            if FINISH_IN_LOOP {
-                while p <= end {
-                    unsafe {
-                        write(o, 0, encode_chunk(read(p, 0)));
-                        p = p.add(t);
-                        o = o.add(t * 2);
-                    }
-                }
-                if p as usize - ip as usize == len {
-                    return;
-                }
-                // The last chunk, overlapping the one before it.
-                unsafe { write(op, (len - t) * 2, encode_chunk(read(ip, len - t))) };
-                return;
-            }
-            while p < end {
+            while p < end || (FINISH_IN_LOOP && p == end) {
                 unsafe {
                     write(o, 0, encode_chunk(read(p, 0)));
                     p = p.add(t);
                     o = o.add(t * 2);
                 }
+            }
+            if FINISH_IN_LOOP {
+                if p.addr() - ip.addr() == len {
+                    return;
+                }
+                // The last chunk, overlapping what is already encoded.
+                unsafe { write(op, (len - t) * 2, encode_chunk(read(ip, len - t))) };
+                return;
             }
         }
     }
@@ -313,9 +307,10 @@ pub(crate) unsafe fn encode_unaligned_chunks<
             unsafe { load_tail(ip, len, t / 2) }
         };
         let [x, y] = encode_chunk(chunk);
+        let (a, b) = tail_offsets(len * 2, t);
         unsafe {
-            write(op, (len * 2).saturating_sub(t * 2), x);
-            write(op, len * 2 - t, y);
+            write(op, a, x);
+            write(op, b, y);
         }
     } else if let Some(chunk) =
         by_piece::<T, MIN_PIECE, _>(len, |p| unsafe { load_tail(ip, len, p) })
@@ -400,9 +395,11 @@ const fn check_u64_mask(x: u64) -> u64 {
 /// `valid` returns a mask of the valid bytes of a chunk, `combine` merges the masks of several
 /// chunks so they are tested together, and `all` tests whether a mask has no invalid byte.
 ///
-/// Inputs of at least `size_of::<T>()` bytes are checked in groups of four chunks, with the last
-/// group overlapping the one before it. Shorter inputs of at least [`MIN_PIECE`] bytes are checked
-/// in one chunk built from two overlapping loads. Anything shorter is passed to [`check`].
+/// Inputs of at least `size_of::<T>()` bytes are checked in groups of four chunks, then by the size
+/// of the remainder in one more group of four, two or one chunk that overlaps the ones before it.
+/// An input of up to four chunks is checked as one, two or four chunks. Shorter inputs of at least
+/// [`MIN_PIECE`] bytes are checked in one chunk built from two overlapping loads. Anything shorter
+/// is passed to [`check`].
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn check_unaligned_chunks<T: Vector, M: Copy>(
@@ -428,10 +425,10 @@ pub(crate) fn check_unaligned_chunks<T: Vector, M: Copy>(
                 p = unsafe { p.add(t * 4) };
             }
         }
-        let rem = len - (p as usize - ip as usize);
+        let rem = len - (p.addr() - ip.addr());
         if rem > t * 2 {
-            // The last four chunks, overlapping what is already checked. The first two chunks
-            // start at the beginning of the input if it is shorter than four chunks.
+            // The last four chunks, overlapping each other or what is already checked. The first
+            // two chunks start at the beginning of the input if it is shorter than four chunks.
             let a = len.saturating_sub(t * 4);
             let (v01, v23) = (
                 combine(
@@ -541,10 +538,11 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Vector, N: Copy, T: Vect
                     o = o.add(v * 2);
                 }
             }
-            let rem = len - (p as usize - ip as usize);
+            let rem = len - (p.addr() - ip.addr());
             if rem > v * 2 {
-                // The last four vectors, overlapping what is already decoded. The first two
-                // vectors start at the beginning of the input if it is shorter than four vectors.
+                // The last four vectors, overlapping each other or what is already decoded. The
+                // first two vectors start at the beginning of the input if it is shorter than four
+                // vectors.
                 let a = len.saturating_sub(v * 4);
                 let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, a + v)));
                 let (n2, n3) = (nibbles(read(ip, len - v * 2)), nibbles(read(ip, len - v)));
@@ -554,7 +552,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Vector, N: Copy, T: Vect
                 write(op, a / 2, pack(n0, n1));
                 write(op, (len - v * 2) / 2, pack(n2, n3));
             } else if rem > v {
-                // The last two vectors, overlapping what is already decoded.
+                // The last two vectors, overlapping each other or what is already decoded.
                 let (a, b) = tail_offsets(len, v);
                 let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, b)));
                 if !all_valid(combine(n0, n1)) {
@@ -566,7 +564,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Vector, N: Copy, T: Vect
                     pack(n0, n1).store_pair(op.add(a / 2), op.add(b / 2), v / 2);
                 }
             } else if rem > 0 {
-                // The last vector, overlapping what is already decoded.
+                // The last vector, overlapping what is already decoded, if anything.
                 let n = nibbles(read(ip, len - v));
                 if !all_valid(n) {
                     return false;
@@ -595,8 +593,8 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Vector, N: Copy, T: Vect
 
 /// Calls `f` with the size of the pieces that make up the last chunk of `len` bytes, as a constant.
 ///
-/// This is half a chunk, or if the input is shorter than that, the largest of its halves not below
-/// `MIN`. Returns `None` if `len` is below `MIN`.
+/// This is the largest halving of the chunk size that fits in `len` and is at least `MIN`, down to
+/// an eighth of a chunk. Returns `None` if there is none.
 #[inline(always)]
 fn by_piece<T, const MIN: usize, R>(len: usize, f: impl FnOnce(usize) -> R) -> Option<R> {
     let half = size_of::<T>() / 2;
