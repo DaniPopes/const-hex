@@ -291,11 +291,10 @@ pub(crate) unsafe fn encode_unaligned_chunks<
             if FINISH_IN_LOOP && len < t * 2 {
                 // One chunk, and a second overlapping it unless `len == t`.
                 unsafe {
-                    let u0 = encode_chunk(read(ip, 0));
+                    write(op, 0, encode_chunk(read(ip, 0)));
                     if len > t {
                         write(op, (len - t) * 2, encode_chunk(read(ip, len - t)));
                     }
-                    write(op, 0, u0);
                 }
                 return;
             }
