@@ -74,7 +74,7 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
         |chunk| nibbles(chunk),
         |a, b| vminq_u8(a, b),
         // A zero byte marks an invalid character.
-        |nibbles| vminvq_u8(nibbles) != 0,
+        |n| vminvq_u8(n) != 0,
     )
 }
 
@@ -103,7 +103,7 @@ unsafe fn decode_checked_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) -> b
         output,
         |chunk| nibbles(chunk),
         |a, b| vminq_u8(a, b),
-        |nibbles| vminvq_u8(nibbles) != 0,
+        |n| vminvq_u8(n) != 0,
         |a, b| uint8x16_t::pack(a, b),
     )
 }

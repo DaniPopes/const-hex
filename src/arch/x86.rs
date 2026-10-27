@@ -117,26 +117,30 @@ unsafe fn check_avx2(input: &[u8]) -> bool {
 
 #[target_feature(enable = "sse2")]
 unsafe fn check_sse2(input: &[u8]) -> bool {
+    generic::check_unaligned_chunks(
+        input,
+        |chunk| check_chunk_sse2(chunk),
+        |a, b| _mm_and_si128(a, b),
+        |mask| _mm_movemask_epi8(mask) == 0xffff,
+    )
+}
+
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn check_chunk_sse2(chunk: __m128i) -> __m128i {
     let digit_bias = _mm_set1_epi8(0xB0_u8 as i8);
     let alpha_bias = _mm_set1_epi8(0xC1_u8 as i8);
     let case_mask = _mm_set1_epi8(0xDF_u8 as i8);
     let digit_threshold = _mm_set1_epi8(-118);
     let alpha_threshold = _mm_set1_epi8(-122);
 
-    generic::check_unaligned_chunks(
-        input,
-        |chunk: __m128i| {
-            let x1 = _mm_sub_epi8(chunk, digit_bias);
-            let m1 = _mm_cmpgt_epi8(digit_threshold, x1);
+    let x1 = _mm_sub_epi8(chunk, digit_bias);
+    let m1 = _mm_cmpgt_epi8(digit_threshold, x1);
 
-            let x2 = _mm_sub_epi8(_mm_and_si128(chunk, case_mask), alpha_bias);
-            let m2 = _mm_cmpgt_epi8(alpha_threshold, x2);
+    let x2 = _mm_sub_epi8(_mm_and_si128(chunk, case_mask), alpha_bias);
+    let m2 = _mm_cmpgt_epi8(alpha_threshold, x2);
 
-            _mm_or_si128(m1, m2)
-        },
-        |a, b| _mm_and_si128(a, b),
-        |mask| _mm_movemask_epi8(mask) == 0xffff,
-    )
+    _mm_or_si128(m1, m2)
 }
 
 /// Single-pass hex decode with validation using Muła & Langdale's Algorithm #3.
