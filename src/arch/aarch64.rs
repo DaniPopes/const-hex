@@ -29,7 +29,8 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
 
 #[target_feature(enable = "neon")]
 pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 1, _>(input, output, |chunk: uint8x16_t| {
+    // Finishing in the loop keeps the final step off the hot path for multiples of the chunk size.
+    generic::encode_unaligned_chunks::<UPPER, 1, true, _>(input, output, |chunk: uint8x16_t| {
         generic::encode_kernel::<UPPER, _>(chunk)
     });
 }
@@ -82,6 +83,11 @@ pub(crate) unsafe fn check_neon(input: &[u8]) -> bool {
 /// Characters are looked up in a table that gives `0x10 | nibble` for hex digits and 0 otherwise,
 /// so a zero byte marks an invalid character. Pairs are merged with `vsliq_n_u8`, which drops the
 /// marker bit.
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even, because the
+/// tails overlap on hex pairs.
 #[inline]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
     if cfg!(miri) || !has_neon() {

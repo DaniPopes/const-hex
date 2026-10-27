@@ -8,7 +8,8 @@ use core::mem::MaybeUninit;
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output) {
-    generic::encode_unaligned_chunks::<UPPER, 1, _>(input, output, |chunk: v128| {
+    // A single shared final step keeps `encode` inlinable into fixed-size callers.
+    generic::encode_unaligned_chunks::<UPPER, 1, false, _>(input, output, |chunk: v128| {
         generic::encode_kernel::<UPPER, _>(chunk)
     });
 }
@@ -25,6 +26,11 @@ pub(crate) fn check(input: &[u8]) -> bool {
 }
 
 /// Single-pass hex decode with validation.
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even, because the
+/// tails overlap on hex pairs.
 #[inline]
 #[target_feature(enable = "simd128")]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
