@@ -521,9 +521,9 @@ fn encode_simd_boundaries_buffer_display() {
 
 #[test]
 fn check_all_invalid_chars() {
-    // Miri is slow; 25 bytes still reaches the 16-byte, 8-byte, and tail paths.
+    // Miri is slow; 26 bytes still reaches the 16-byte, 8-byte, and tail paths.
     let lens = if cfg!(miri) {
-        vec![1, 25]
+        vec![1, 26]
     } else {
         (1..=33)
             .chain([40, 63, 64, 65, 126, 127, 128, 129, 160, 161])
@@ -531,6 +531,7 @@ fn check_all_invalid_chars() {
     };
     for len in lens {
         let mut input = vec![b'a'; len];
+        let mut output = vec![0u8; len / 2];
         for pos in 0..len {
             for c in 0u8..=255 {
                 let is_valid = c.is_ascii_hexdigit();
@@ -546,6 +547,17 @@ fn check_all_invalid_chars() {
                     is_valid,
                     "const: char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
                 );
+                if len % 2 == 0 {
+                    let err = const_hex::FromHexError::InvalidHexCharacter {
+                        c: c as char,
+                        index: pos,
+                    };
+                    assert_eq!(
+                        const_hex::decode_to_slice(&input, &mut output),
+                        if is_valid { Ok(()) } else { Err(err) },
+                        "decode: char {c} (0x{c:02x}) at {pos} of {len} should be {expected}"
+                    );
+                }
             }
             input[pos] = b'a';
         }

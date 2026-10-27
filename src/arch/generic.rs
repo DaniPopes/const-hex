@@ -410,6 +410,15 @@ const fn check_u64_mask(x: u64) -> u64 {
     (x | !valid) & HIGH
 }
 
+/// Decodes 8 valid hex characters into 4 bytes.
+const fn decode_u64(x: u64) -> u32 {
+    // '0'..='9' -> 0..=9; 'A'..='F' and 'a'..='f' have bit 6 set -> (x & 0xF) + 9.
+    let n = (x & (ONES * 0x0F)) + ((x >> 6) & ONES) * 9;
+    let t = ((n << 4) | (n >> 8)) & 0x00FF_00FF_00FF_00FF;
+    let t = (t | (t >> 8)) & 0x0000_FFFF_0000_FFFF;
+    (t | (t >> 16)) as u32
+}
+
 /// Checks `input` in chunks of `T`.
 ///
 /// `valid` classifies the bytes of a chunk, `combine` merges the classifications of several chunks
@@ -489,6 +498,11 @@ pub(crate) fn check_unaligned_chunks<T: Vector>(
 /// Assumes `output.len() == input.len() / 2`.
 #[inline(always)]
 pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bool {
+    // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
+    // loop below. Shorter inputs keep the inlined loop, which is faster for them.
+    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) && input.len() >= 16 {
+        return unsafe { decode_checked_swar(input, output) };
+    }
     let l = output.remaining().unwrap_or(input.len() / 2);
     debug_assert_eq!(l, input.len() / 2);
     let mut i = 0;
@@ -504,6 +518,44 @@ pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bo
         i += 1;
     }
     true
+}
+
+/// Checked-decodes 16 hex characters at a time, then the remainder with [`decode_checked`].
+///
+/// # Safety
+///
+/// Assumes `output.len() == input.len() / 2`.
+#[inline(never)]
+unsafe fn decode_checked_swar(mut input: &[u8], mut output: impl Output) -> bool {
+    while let &[
+        a,
+        b,
+        c,
+        d,
+        e,
+        f,
+        g,
+        h,
+        a2,
+        b2,
+        c2,
+        d2,
+        e2,
+        f2,
+        g2,
+        h2,
+        ref rest @ ..,
+    ] = input
+    {
+        let x = u64::from_le_bytes([a, b, c, d, e, f, g, h]);
+        let y = u64::from_le_bytes([a2, b2, c2, d2, e2, f2, g2, h2]);
+        if check_u64_mask(x) | check_u64_mask(y) != 0 {
+            return false;
+        }
+        output.write(&(decode_u64(x) as u64 | (decode_u64(y) as u64) << 32).to_le_bytes());
+        input = rest;
+    }
+    unsafe { decode_checked(input, output) }
 }
 
 /// Checked-decodes `input` to `output` in vectors of `T`.
