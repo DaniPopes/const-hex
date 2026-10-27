@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use super::generic::{self, Vector};
-use crate::Output;
+use crate::{Output, get_chars_table};
 use core::mem::MaybeUninit;
 use core::simd::prelude::*;
 
@@ -39,15 +39,20 @@ generic::impl_vector! {
         self >> Simd::splat(4)
     }
 
-    /// Adds the distance from `'0'` to the letter for nibbles above 9 instead of looking up a
-    /// table, because `swizzle_dyn` compiles to scalar code without `-Zbuild-std`.
+    /// `swizzle_dyn` is a `tbl` on aarch64, where `core` is built with NEON. Elsewhere `core` is
+    /// built without SSSE3 or simd128, so it compiles to scalar code, and this adds the distance
+    /// from `'0'` to the letter to nibbles above 9 instead.
     #[inline(always)]
     unsafe fn hex_digits<const UPPER: bool>(self) -> Self {
-        let letter = if UPPER { b'A' } else { b'a' } - 10 - b'0';
-        let adjust = self
-            .simd_gt(Simd::splat(9))
-            .select(Simd::splat(letter), Simd::splat(0));
-        self + Simd::splat(b'0') + adjust
+        if cfg!(any(target_arch = "aarch64", target_arch = "arm64ec")) {
+            Simd::from_array(*get_chars_table::<UPPER>()).swizzle_dyn(self)
+        } else {
+            let letter = if UPPER { b'A' } else { b'a' } - 10 - b'0';
+            let adjust = self
+                .simd_gt(Simd::splat(9))
+                .select(Simd::splat(letter), Simd::splat(0));
+            self + Simd::splat(b'0') + adjust
+        }
     }
 
     #[inline(always)]
