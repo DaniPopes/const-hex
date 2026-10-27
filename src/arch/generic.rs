@@ -396,13 +396,6 @@ const fn check_u64_mask(x: u64) -> u64 {
 }
 
 /// Decodes 8 valid hex characters into 4 bytes.
-#[cfg(any(
-    feature = "force-generic",
-    not(any(
-        feature = "portable-simd",
-        all(target_arch = "wasm32", target_feature = "simd128")
-    ))
-))]
 const fn decode_u64(x: u64) -> u32 {
     // '0'..='9' -> 0..=9; 'A'..='F' and 'a'..='f' have bit 6 set -> (x & 0xF) + 9.
     let n = (x & (ONES * 0x0F)) + ((x >> 6) & ONES) * 9;
@@ -488,36 +481,35 @@ pub(crate) fn check_unaligned_chunks<T: Vector>(
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2`.
-// Mirrors the backend selection in `arch/mod.rs`.
-#[cfg(any(
-    feature = "force-generic",
-    not(any(
-        feature = "portable-simd",
-        all(target_arch = "wasm32", target_feature = "simd128")
-    ))
-))]
-#[inline]
-pub(crate) unsafe fn decode_checked(input: &[u8], output: impl Output) -> bool {
+#[inline(always)]
+pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bool {
     // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
     // loop below. Shorter inputs keep the inlined loop, which is faster for them.
     if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) && input.len() >= 16 {
         return unsafe { decode_checked_swar(input, output) };
     }
-    unsafe { decode_checked_bytes(input, output) }
+    let l = output.remaining().unwrap_or(input.len() / 2);
+    debug_assert_eq!(l, input.len() / 2);
+    let mut i = 0;
+    while i < l {
+        let hex = unsafe { *input.get_unchecked(i * 2) };
+        let high = HEX_DECODE_LUT[hex as usize];
+        let hex = unsafe { *input.get_unchecked(i * 2 + 1) };
+        let low = HEX_DECODE_LUT[hex as usize];
+        if (low | high) == NIL {
+            return false;
+        }
+        output.write_byte(high << 4 | low);
+        i += 1;
+    }
+    true
 }
 
-/// Checked-decodes 16 hex characters at a time, then the remainder with [`decode_checked_bytes`].
+/// Checked-decodes 16 hex characters at a time, then the remainder with [`decode_checked`].
 ///
 /// # Safety
 ///
 /// Assumes `output.len() == input.len() / 2`.
-#[cfg(any(
-    feature = "force-generic",
-    not(any(
-        feature = "portable-simd",
-        all(target_arch = "wasm32", target_feature = "simd128")
-    ))
-))]
 #[inline(never)]
 unsafe fn decode_checked_swar(mut input: &[u8], mut output: impl Output) -> bool {
     while let &[
@@ -548,31 +540,7 @@ unsafe fn decode_checked_swar(mut input: &[u8], mut output: impl Output) -> bool
         output.write(&(decode_u64(x) as u64 | (decode_u64(y) as u64) << 32).to_le_bytes());
         input = rest;
     }
-    unsafe { decode_checked_bytes(input, output) }
-}
-
-/// Checked-decodes `input` one byte at a time.
-///
-/// # Safety
-///
-/// Assumes `output.len() == input.len() / 2`.
-#[inline(always)]
-unsafe fn decode_checked_bytes(input: &[u8], mut output: impl Output) -> bool {
-    let l = output.remaining().unwrap_or(input.len() / 2);
-    debug_assert_eq!(l, input.len() / 2);
-    let mut i = 0;
-    while i < l {
-        let hex = unsafe { *input.get_unchecked(i * 2) };
-        let high = HEX_DECODE_LUT[hex as usize];
-        let hex = unsafe { *input.get_unchecked(i * 2 + 1) };
-        let low = HEX_DECODE_LUT[hex as usize];
-        if (low | high) == NIL {
-            return false;
-        }
-        output.write_byte(high << 4 | low);
-        i += 1;
-    }
-    true
+    unsafe { decode_checked(input, output) }
 }
 
 /// Checked-decodes `input` to `output` in vectors of `T`.
@@ -585,8 +553,8 @@ unsafe fn decode_checked_bytes(input: &[u8], mut output: impl Output) -> bool {
 /// Inputs of at least `size_of::<T>()` characters are decoded in groups of four vectors, and the
 /// remainder in one last group of four, two or one vector that overlaps the groups before it.
 /// Shorter inputs of at least [`MIN_DECODE_PIECE`] characters are decoded in one vector built from
-/// two overlapping loads. Anything shorter is passed to [`decode_checked_bytes`]. Returns `false`
-/// on the first invalid group, and may have written part of `output` by then.
+/// two overlapping loads. Anything shorter is passed to [`decode_checked`]. Returns `false` on the
+/// first invalid group, and may have written part of `output` by then.
 ///
 /// # Safety
 ///
@@ -675,7 +643,7 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<T: Vector>(
         debug_assert!(stored.is_some());
         true
     } else {
-        unsafe { decode_checked_bytes(input, output) }
+        unsafe { decode_checked(input, output) }
     }
 }
 
