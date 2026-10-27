@@ -12,7 +12,22 @@ const MIN_DECODE_PIECE: usize = MIN_PIECE * 2;
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
-pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Output) {
+pub(crate) unsafe fn encode<const UPPER: bool>(mut input: &[u8], mut output: impl Output) {
+    // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
+    // per-byte loop.
+    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) {
+        // Encodes 4 bytes into 8 hex digits in memory order.
+        while let &[a, b, c, d, ref rest @ ..] = input {
+            // Split each byte into its high and low nibble.
+            let x = u64::from_le_bytes([a, 0, b, 0, c, 0, d, 0]);
+            let n = ((x >> 4) | (x << 8)) & (ONES * 0x0F);
+            // Nibbles 10..=15 get the extra offset from '9' + 1 to 'a' (or 'A').
+            let gt9 = ((n + ONES * 6) >> 4) & ONES;
+            let chunk = n + ONES * b'0' as u64 + gt9 * if UPPER { 7 } else { 39 };
+            output.write(&chunk.to_le_bytes());
+            input = rest;
+        }
+    }
     for &byte in input {
         let (high, low) = byte2hex::<UPPER>(byte);
         output.write_byte(high);
@@ -228,9 +243,11 @@ pub(crate) unsafe fn decode_all_valid<V: Vector>(nibbles: V) -> bool {
 /// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. With `1`,
 /// `FINISH_IN_LOOP` selects whether the loop encodes every whole chunk and an exact multiple of the
 /// chunk size returns without a final step, or the loop stops one chunk early and a single final
-/// step, shared with the short-input tail, always encodes the last chunk. These shapes, and
-/// unrolling, are a per-backend choice because each is the fastest in some code generators and
-/// slower in others (see the callers); `FINISH_IN_LOOP` has no effect with `UNROLL` of `2`.
+/// step, shared with the short-input tail, always encodes the last chunk. With `FINISH_IN_LOOP`,
+/// inputs of at least one chunk and fewer than two skip the loop and use at most two overlapping
+/// chunks. These shapes, and unrolling, are a per-backend choice because each is the fastest in
+/// some code generators and slower in others (see the callers); `FINISH_IN_LOOP` has no effect with
+/// `UNROLL` of `2`.
 ///
 /// # Safety
 ///
@@ -284,6 +301,18 @@ pub(crate) unsafe fn encode_unaligned_chunks<
                 return;
             }
         } else {
+            // Only with `FINISH_IN_LOOP`: on wasm32 this branch stops `encode` from inlining for
+            // fixed-size inputs.
+            if FINISH_IN_LOOP && len < t * 2 {
+                // One chunk, and a second overlapping it unless `len == t`.
+                unsafe {
+                    write(op, 0, encode_chunk(read(ip, 0)));
+                    if len > t {
+                        write(op, (len - t) * 2, encode_chunk(read(ip, len - t)));
+                    }
+                }
+                return;
+            }
             let end = unsafe { ip.add(len - t) };
             while p < end || (FINISH_IN_LOOP && p == end) {
                 unsafe {
@@ -395,6 +424,15 @@ const fn check_u64_mask(x: u64) -> u64 {
     (x | !valid) & HIGH
 }
 
+/// Decodes 8 valid hex characters into 4 bytes.
+const fn decode_u64(x: u64) -> u32 {
+    // '0'..='9' -> 0..=9; 'A'..='F' and 'a'..='f' have bit 6 set -> (x & 0xF) + 9.
+    let n = (x & (ONES * 0x0F)) + ((x >> 6) & ONES) * 9;
+    let t = ((n << 4) | (n >> 8)) & 0x00FF_00FF_00FF_00FF;
+    let t = (t | (t >> 8)) & 0x0000_FFFF_0000_FFFF;
+    (t | (t >> 16)) as u32
+}
+
 /// Checks `input` in chunks of `T`.
 ///
 /// `valid` classifies the bytes of a chunk, `combine` merges the classifications of several chunks
@@ -474,6 +512,11 @@ pub(crate) fn check_unaligned_chunks<T: Vector>(
 /// Assumes `output.len() == input.len() / 2`.
 #[inline(always)]
 pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bool {
+    // `u64` is emulated on 32-bit targets other than wasm32, where this loop is slower than the
+    // loop below. Shorter inputs keep the inlined loop, which is faster for them.
+    if cfg!(any(target_pointer_width = "64", target_arch = "wasm32")) && input.len() >= 16 {
+        return unsafe { decode_checked_swar(input, output) };
+    }
     let l = output.remaining();
     debug_assert_eq!(l, input.len() / 2);
     let mut i = 0;
@@ -489,6 +532,44 @@ pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bo
         i += 1;
     }
     true
+}
+
+/// Checked-decodes 16 hex characters at a time, then the remainder with [`decode_checked`].
+///
+/// # Safety
+///
+/// Assumes `output.len() == input.len() / 2`.
+#[inline(never)]
+unsafe fn decode_checked_swar(mut input: &[u8], mut output: impl Output) -> bool {
+    while let &[
+        a,
+        b,
+        c,
+        d,
+        e,
+        f,
+        g,
+        h,
+        a2,
+        b2,
+        c2,
+        d2,
+        e2,
+        f2,
+        g2,
+        h2,
+        ref rest @ ..,
+    ] = input
+    {
+        let x = u64::from_le_bytes([a, b, c, d, e, f, g, h]);
+        let y = u64::from_le_bytes([a2, b2, c2, d2, e2, f2, g2, h2]);
+        if check_u64_mask(x) | check_u64_mask(y) != 0 {
+            return false;
+        }
+        output.write(&(decode_u64(x) as u64 | (decode_u64(y) as u64) << 32).to_le_bytes());
+        input = rest;
+    }
+    unsafe { decode_checked(input, output) }
 }
 
 /// Checked-decodes `input` to `output` in vectors of `T`.
