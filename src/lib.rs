@@ -89,7 +89,6 @@ pub use traits::{FromHex, ToHex};
 cfg_if! {
     if #[cfg(feature = "nightly")] {
         // Branch prediction hints.
-        #[allow(unused_imports)]
         use core::intrinsics::unlikely;
 
         // `inline_const`: [#76001](https://github.com/rust-lang/rust/issues/76001)
@@ -99,7 +98,6 @@ cfg_if! {
             };
         }
     } else {
-        #[allow(unused_imports)]
         use core::convert::identity as unlikely;
 
         macro_rules! maybe_const_assert {
