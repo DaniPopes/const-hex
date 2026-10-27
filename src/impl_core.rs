@@ -1,7 +1,5 @@
 //! Modified implementations of unstable libcore functions.
 
-#![allow(dead_code)]
-
 use core::mem::{self, MaybeUninit};
 
 /// Reinterprets `&mut [T]` as `&mut [MaybeUninit<T>]`.

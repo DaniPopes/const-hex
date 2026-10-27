@@ -1,4 +1,5 @@
 use core::fmt;
+use core::mem::MaybeUninit;
 
 /// Returns a value that can be formatted using the [`fmt`] traits.
 ///
@@ -54,19 +55,33 @@ pub(crate) fn write_hex<const UPPER: bool>(
         return if prefix { f.write_str("0x") } else { Ok(()) };
     }
     let mut buf = crate::impl_core::uninit_array::<u8, { 2 + CHUNK_LEN * 2 }>();
-    buf[0].write(b'0');
-    buf[1].write(b'x');
     for (i, chunk) in input.chunks(CHUNK_LEN).enumerate() {
-        let end = 2 + chunk.len() * 2;
-        // SAFETY: `buf[2..end]` is exactly `chunk.len() * 2` bytes long.
-        unsafe { crate::encode_uninit::<UPPER>(chunk, &mut buf[2..end]) };
-        let start = if prefix && i == 0 { 0 } else { 2 };
-        // SAFETY: `buf[..end]` is initialized: the prefix above and the encoded chunk.
-        // Only ASCII characters, which are valid UTF-8, have been written.
-        let s = unsafe {
-            core::str::from_utf8_unchecked(crate::impl_core::slice_assume_init(&buf[start..end]))
-        };
-        f.write_str(s)?;
+        f.write_str(encode_str::<UPPER>(chunk, prefix && i == 0, &mut buf))?;
     }
     Ok(())
+}
+
+/// Encodes `input` as hex into `buf` and returns it as a string, with a `0x` prefix if `prefix`.
+///
+/// The prefix goes in `buf[0..2]` and the hex digits in `buf[2..]`, so `buf` must be at least
+/// `2 + input.len() * 2` bytes long.
+#[inline]
+pub(crate) fn encode_str<'a, const UPPER: bool>(
+    input: &[u8],
+    prefix: bool,
+    buf: &'a mut [MaybeUninit<u8>],
+) -> &'a str {
+    let end = 2 + input.len() * 2;
+    let start = if prefix {
+        buf[0].write(b'0');
+        buf[1].write(b'x');
+        0
+    } else {
+        2
+    };
+    // SAFETY: `buf[2..end]` is exactly `input.len() * 2` bytes long.
+    unsafe { crate::encode_uninit::<UPPER>(input, &mut buf[2..end]) };
+    // SAFETY: `buf[start..end]` is initialized: the prefix, if `prefix`, and the encoded input.
+    // Only ASCII characters, which are valid UTF-8, have been written.
+    unsafe { core::str::from_utf8_unchecked(crate::impl_core::slice_assume_init(&buf[start..end])) }
 }

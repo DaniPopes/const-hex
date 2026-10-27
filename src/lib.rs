@@ -90,7 +90,7 @@ cfg_if! {
     if #[cfg(feature = "nightly")] {
         // Branch prediction hints.
         #[allow(unused_imports)]
-        use core::intrinsics::{likely, unlikely};
+        use core::intrinsics::unlikely;
 
         // `inline_const`: [#76001](https://github.com/rust-lang/rust/issues/76001)
         macro_rules! maybe_const_assert {
@@ -100,7 +100,7 @@ cfg_if! {
         }
     } else {
         #[allow(unused_imports)]
-        use core::convert::{identity as likely, identity as unlikely};
+        use core::convert::identity as unlikely;
 
         macro_rules! maybe_const_assert {
             ($($tt:tt)*) => {
