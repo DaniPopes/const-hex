@@ -11,7 +11,7 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], output: impl Output
     // Load table.
     let hex_table = v128_load(get_chars_table::<UPPER>().as_ptr().cast());
 
-    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: v128| {
+    generic::encode_unaligned_chunks::<UPPER, 1, _, _>(input, output, |chunk: v128| {
         // Load input bytes and mask to nibbles.
         let mut lo = v128_and(chunk, u8x16_splat(0x0F));
         let mut hi = u8x16_shr(chunk, 4);

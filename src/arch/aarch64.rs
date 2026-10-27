@@ -32,7 +32,7 @@ pub(crate) unsafe fn encode_neon<const UPPER: bool>(input: &[u8], output: impl O
     // Load table.
     let hex_table = vld1q_u8(get_chars_table::<UPPER>().as_ptr());
 
-    generic::encode_unaligned_chunks::<UPPER, _, _>(input, output, |chunk: uint8x16_t| {
+    generic::encode_unaligned_chunks::<UPPER, 1, _, _>(input, output, |chunk: uint8x16_t| {
         // Load input bytes and mask to nibbles.
         let mut lo = vandq_u8(chunk, vdupq_n_u8(0x0F));
         let mut hi = vshrq_n_u8(chunk, 4);

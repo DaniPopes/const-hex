@@ -5,7 +5,7 @@ use core::mem::{MaybeUninit, size_of};
 const MIN_PIECE: usize = 4;
 
 /// Smallest piece of a tail for decoding, in hex characters.
-const MIN_DECODE_PIECE: usize = 8;
+const MIN_DECODE_PIECE: usize = MIN_PIECE * 2;
 
 /// Default encoding function.
 ///
@@ -26,53 +26,93 @@ pub(crate) unsafe fn encode<const UPPER: bool>(input: &[u8], mut output: impl Ou
 /// overlapping the one before it. Shorter inputs of at least [`MIN_PIECE`] bytes are encoded in
 /// one chunk built from two overlapping loads. Anything shorter is encoded with [`encode`].
 ///
+/// `UNROLL` is the number of chunks per iteration of the main loop, `1` or `2`. Unrolling twice
+/// avoids a layout-dependent slowdown on x86, but is slower elsewhere.
+///
 /// # Safety
 ///
 /// `output` must be at least `2 * input.len()` bytes long.
 #[inline]
 #[allow(dead_code)]
-pub(crate) unsafe fn encode_unaligned_chunks<const UPPER: bool, T: Copy, U: Copy>(
+pub(crate) unsafe fn encode_unaligned_chunks<
+    const UPPER: bool,
+    const UNROLL: usize,
+    T: Copy,
+    U: Copy,
+>(
     input: &[u8],
     mut output: impl Output,
     encode_chunk: impl Fn(T) -> U,
 ) {
+    const { assert!(UNROLL == 1 || UNROLL == 2) };
     debug_assert_eq!(size_of::<U>(), size_of::<T>() * 2);
     let len = input.len();
     debug_assert!(output.remaining().is_none_or(|n| n >= len * 2));
     let ip = input.as_ptr();
     let op = output.as_mut_ptr();
-
     let t = size_of::<T>();
+
     if len >= t {
-        let mut i = 0;
-        // Unrolled twice: a single-chunk loop runs up to 1.6x slower in some code layouts.
-        while len - i >= t * 2 {
-            unsafe {
-                let (u0, u1) = (encode_chunk(read(ip, i)), encode_chunk(read(ip, i + t)));
-                write(op, i * 2, u0);
-                write(op, (i + t) * 2, u1);
+        let (mut p, mut o) = (ip, op);
+        if UNROLL == 2 {
+            if len >= t * 2 {
+                let end = unsafe { ip.add(len - t * 2) };
+                while p <= end {
+                    unsafe {
+                        let (u0, u1) = (encode_chunk(read(p, 0)), encode_chunk(read(p, t)));
+                        write(o, 0, u0);
+                        write(o, t * 2, u1);
+                        p = p.add(t * 2);
+                        o = o.add(t * 4);
+                    }
+                }
             }
-            i += t * 2;
+            let done = p as usize - ip as usize;
+            if len - done > t {
+                // The last two chunks, overlapping what is already encoded.
+                let (a, b) = tail_offsets(len, t);
+                unsafe {
+                    let (u0, u1) = (encode_chunk(read(ip, a)), encode_chunk(read(ip, b)));
+                    write(op, a * 2, u0);
+                    write(op, b * 2, u1);
+                }
+                return;
+            }
+            if done == len {
+                return;
+            }
+        } else {
+            let end = unsafe { ip.add(len - t) };
+            while p < end {
+                unsafe {
+                    write(o, 0, encode_chunk(read(p, 0)));
+                    p = p.add(t);
+                    o = o.add(t * 2);
+                }
+            }
         }
-        if len - i >= t {
-            unsafe { write(op, i * 2, encode_chunk(read(ip, i))) };
-            i += t;
-        }
-        if i < len {
-            // The last chunk, overlapping what is already encoded.
-            unsafe { write(op, (len - t) * 2, encode_chunk(read(ip, len - t))) };
-        }
-    } else if len < MIN_PIECE {
-        unsafe { encode::<UPPER>(input, output) };
+    }
+
+    // The last chunk, which overlaps the one before it unless the input is shorter than a chunk.
+    let chunk = if len >= t {
+        unsafe { read(ip, len - t) }
+    } else if let Some(chunk) =
+        by_piece::<T, MIN_PIECE, _>(len, |p| unsafe { load_tail(ip, len, p) })
+    {
+        chunk
     } else {
-        unsafe {
-            let chunk = by_piece::<T, MIN_PIECE, _>(len, |p| load_tail(ip, len, p));
-            let encoded = encode_chunk(chunk);
-            by_piece::<T, MIN_PIECE, _>(len, |p| {
-                let (a, b) = tail_offsets(len, p);
-                store_pair(encoded, op.add(a * 2), op.add(b * 2), p * 2)
-            });
-        }
+        return unsafe { encode::<UPPER>(input, output) };
+    };
+    let encoded = encode_chunk(chunk);
+    if len >= t {
+        unsafe { write(op, (len - t) * 2, encoded) };
+    } else {
+        let stored = by_piece::<T, MIN_PIECE, _>(len, |p| unsafe {
+            let (a, b) = tail_offsets(len, p);
+            store_pair(encoded, op.add(a * 2), op.add(b * 2), p * 2)
+        });
+        // SAFETY: The loads above found a piece size for this length.
+        unsafe { stored.unwrap_unchecked() };
     }
 }
 
@@ -143,8 +183,9 @@ const fn check_u64_mask(x: u64) -> u64 {
 /// `valid` returns a mask of the valid bytes of a chunk, `combine` merges the masks of several
 /// chunks so they are tested together, and `all` tests whether a mask has no invalid byte.
 ///
-/// Tails are handled as in [`encode_unaligned_chunks`], with inputs shorter than [`MIN_PIECE`]
-/// bytes passed to [`check`].
+/// Inputs of at least `size_of::<T>()` bytes are checked in groups of four chunks, with the last
+/// group overlapping the one before it. Shorter inputs of at least [`MIN_PIECE`] bytes are checked
+/// in one chunk built from two overlapping loads. Anything shorter is passed to [`check`].
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn check_unaligned_chunks<T: Copy, M: Copy>(
@@ -158,29 +199,51 @@ pub(crate) fn check_unaligned_chunks<T: Copy, M: Copy>(
     let t = size_of::<T>();
 
     if len >= t {
-        let mut i = 0;
-        while len - i >= t * 4 {
-            let [c0, c1, c2, c3] = unsafe { read::<[T; 4]>(ip, i) };
-            let (v01, v23) = (combine(valid(c0), valid(c1)), combine(valid(c2), valid(c3)));
-            if !all(combine(v01, v23)) {
-                return false;
+        let mut p = ip;
+        if len >= t * 4 {
+            let end = unsafe { ip.add(len - t * 4) };
+            while p <= end {
+                let [c0, c1, c2, c3] = unsafe { read::<[T; 4]>(p, 0) };
+                let (v01, v23) = (combine(valid(c0), valid(c1)), combine(valid(c2), valid(c3)));
+                if !all(combine(v01, v23)) {
+                    return false;
+                }
+                p = unsafe { p.add(t * 4) };
             }
-            i += t * 4;
         }
-        while len - i >= t {
-            if !all(valid(unsafe { read(ip, i) })) {
-                return false;
-            }
-            i += t;
+        let rem = len - (p as usize - ip as usize);
+        if rem > t * 2 {
+            // The last four chunks, overlapping what is already checked. The first two chunks
+            // start at the beginning of the input if it is shorter than four chunks.
+            let a = len.saturating_sub(t * 4);
+            let (v01, v23) = (
+                combine(
+                    valid(unsafe { read(ip, a) }),
+                    valid(unsafe { read(ip, a + t) }),
+                ),
+                combine(
+                    valid(unsafe { read(ip, len - t * 2) }),
+                    valid(unsafe { read(ip, len - t) }),
+                ),
+            );
+            all(combine(v01, v23))
+        } else if rem > t {
+            // The last two chunks.
+            let (a, b) = tail_offsets(len, t);
+            all(combine(
+                valid(unsafe { read(ip, a) }),
+                valid(unsafe { read(ip, b) }),
+            ))
+        } else {
+            // The last chunk.
+            rem == 0 || all(valid(unsafe { read(ip, len - t) }))
         }
-        // The last chunk, overlapping what is already checked.
-        i == len || all(valid(unsafe { read(ip, len - t) }))
-    } else if len < MIN_PIECE {
-        check(input)
+    } else if let Some(chunk) =
+        by_piece::<T, MIN_PIECE, _>(len, |p| unsafe { load_tail(ip, len, p) })
+    {
+        all(valid(chunk))
     } else {
-        all(valid(unsafe {
-            by_piece::<T, MIN_PIECE, _>(len, |p| load_tail(ip, len, p))
-        }))
+        check(input)
     }
 }
 
@@ -216,9 +279,11 @@ pub(crate) unsafe fn decode_checked(input: &[u8], mut output: impl Output) -> bo
 /// vectors into `T`, the decoded bytes of the first followed by those of the second. `T` is the
 /// size of `V`.
 ///
-/// Tails are handled as in [`encode_unaligned_chunks`], with inputs shorter than
-/// [`MIN_DECODE_PIECE`] characters passed to [`decode_checked`]. Returns `false` on the first
-/// invalid step, and may have written part of `output` by then.
+/// Inputs of at least `size_of::<V>()` characters are decoded in groups of four vectors, and the
+/// remainder in one last group of four, two or one vector that overlaps the groups before it.
+/// Shorter inputs of at least [`MIN_DECODE_PIECE`] characters are decoded in one vector built from
+/// two overlapping loads. Anything shorter is passed to [`decode_checked`]. Returns `false` on the
+/// first invalid group, and may have written part of `output` by then.
 ///
 /// # Safety
 ///
@@ -243,78 +308,90 @@ pub(crate) unsafe fn decode_checked_unaligned_chunks<V: Copy, N: Copy, T: Copy>(
     let v = size_of::<V>();
 
     if len >= v {
-        let mut i = 0;
+        let (mut p, mut o) = (ip, op);
         unsafe {
-            while len - i >= v * 4 {
-                let [v0, v1, v2, v3] = read::<[V; 4]>(ip, i);
-                let (n0, n1, n2, n3) = (nibbles(v0), nibbles(v1), nibbles(v2), nibbles(v3));
+            if len >= v * 4 {
+                let end = ip.add(len - v * 4);
+                while p <= end {
+                    let [v0, v1, v2, v3] = read::<[V; 4]>(p, 0);
+                    let (n0, n1, n2, n3) = (nibbles(v0), nibbles(v1), nibbles(v2), nibbles(v3));
+                    if !all_valid(combine(combine(n0, n1), combine(n2, n3))) {
+                        return false;
+                    }
+                    write(o, 0, pack(n0, n1));
+                    write(o, v, pack(n2, n3));
+                    p = p.add(v * 4);
+                    o = o.add(v * 2);
+                }
+            }
+            let rem = len - (p as usize - ip as usize);
+            if rem > v * 2 {
+                // The last four vectors, overlapping what is already decoded. The first two
+                // vectors start at the beginning of the input if it is shorter than four vectors.
+                let a = len.saturating_sub(v * 4);
+                let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, a + v)));
+                let (n2, n3) = (nibbles(read(ip, len - v * 2)), nibbles(read(ip, len - v)));
                 if !all_valid(combine(combine(n0, n1), combine(n2, n3))) {
                     return false;
                 }
-                write(op, i / 2, pack(n0, n1));
-                write(op, i / 2 + v, pack(n2, n3));
-                i += v * 4;
-            }
-            if len - i > v * 2 {
-                let (n0, n1) = (nibbles(read(ip, i)), nibbles(read(ip, i + v)));
-                if !all_valid(combine(n0, n1)) {
-                    return false;
-                }
-                write(op, i / 2, pack(n0, n1));
-                i += v * 2;
-            }
-            if len - i > v {
+                write(op, a / 2, pack(n0, n1));
+                write(op, (len - v * 2) / 2, pack(n2, n3));
+            } else if rem > v {
                 // The last two vectors, overlapping what is already decoded.
                 let (a, b) = tail_offsets(len, v);
                 let (n0, n1) = (nibbles(read(ip, a)), nibbles(read(ip, b)));
                 if !all_valid(combine(n0, n1)) {
                     return false;
                 }
-                store_pair(pack(n0, n1), op.add(a / 2), op.add(b / 2), v / 2);
-            } else if i < len {
+                if len >= v * 2 {
+                    write(op, a / 2, pack(n0, n1));
+                } else {
+                    store_pair(pack(n0, n1), op.add(a / 2), op.add(b / 2), v / 2);
+                }
+            } else if rem > 0 {
                 // The last vector, overlapping what is already decoded.
                 let n = nibbles(read(ip, len - v));
                 if !all_valid(n) {
                     return false;
                 }
-                let dst = op.add((len - v) / 2);
-                store_pair(pack(n, n), dst, dst.add(v / 4), v / 4);
+                store_prefix(pack(n, n), op.add((len - v) / 2), v / 2);
             }
         }
         true
-    } else if len < MIN_DECODE_PIECE {
-        unsafe { decode_checked(input, output) }
+    } else if let Some(n) =
+        by_piece::<V, MIN_DECODE_PIECE, _>(len, |p| unsafe { nibbles(load_tail(ip, len, p)) })
+    {
+        if !all_valid(n) {
+            return false;
+        }
+        let decoded = pack(n, n);
+        let stored = by_piece::<V, MIN_DECODE_PIECE, _>(len, |p| unsafe {
+            let (a, b) = tail_offsets(len, p);
+            store_pair(decoded, op.add(a / 2), op.add(b / 2), p / 2)
+        });
+        // SAFETY: The loads above found a piece size for this length.
+        unsafe { stored.unwrap_unchecked() };
+        true
     } else {
-        unsafe {
-            let n = nibbles(by_piece::<V, MIN_DECODE_PIECE, _>(len, |p| {
-                load_tail(ip, len, p)
-            }));
-            if !all_valid(n) {
-                return false;
-            }
-            let decoded = pack(n, n);
-            by_piece::<V, MIN_DECODE_PIECE, _>(len, |p| {
-                let (a, b) = tail_offsets(len, p);
-                store_pair(decoded, op.add(a / 2), op.add(b / 2), p / 2)
-            });
-        }
-        true
+        unsafe { decode_checked(input, output) }
     }
 }
 
 /// Calls `f` with the size of the pieces that make up the last chunk of `len` bytes, as a constant.
 ///
-/// This is half a chunk, or if the input is shorter than that, the largest of its halves.
+/// This is half a chunk, or if the input is shorter than that, the largest of its halves not below
+/// `MIN`. Returns `None` if `len` is below `MIN`.
 #[inline(always)]
-fn by_piece<T, const MIN: usize, R>(len: usize, f: impl FnOnce(usize) -> R) -> R {
-    const { assert!(size_of::<T>() <= 64 && size_of::<T>() / 8 <= MIN) };
+fn by_piece<T, const MIN: usize, R>(len: usize, f: impl FnOnce(usize) -> R) -> Option<R> {
     let half = size_of::<T>() / 2;
     if len >= half {
-        f(half)
-    } else if len >= half / 2 {
-        f(half / 2)
+        Some(f(half))
+    } else if half / 2 >= MIN && len >= half / 2 {
+        Some(f(half / 2))
+    } else if half / 4 >= MIN && len >= half / 4 {
+        Some(f(half / 4))
     } else {
-        f(half / 4)
+        None
     }
 }
 
@@ -380,6 +457,16 @@ unsafe fn load_pair<T: Copy>(a: *const u8, b: *const u8, piece: usize) -> T {
         }
     }
     unsafe { chunk.assume_init() }
+}
+
+/// Stores the first `len` bytes of `chunk` at `dst`.
+#[inline(always)]
+const unsafe fn store_prefix<T: Copy>(chunk: T, dst: *mut u8, len: usize) {
+    unsafe {
+        (&chunk as *const T)
+            .cast::<u8>()
+            .copy_to_nonoverlapping(dst, len)
+    }
 }
 
 /// Stores the first `len` bytes of `chunk` at `a`, and the next `len` bytes at `b`.
