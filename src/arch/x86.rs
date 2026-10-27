@@ -160,11 +160,24 @@ unsafe fn valid_sse2(chunk: __m128i) -> __m128i {
 /// tails overlap on hex pairs.
 #[inline]
 pub(crate) unsafe fn decode_checked(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
-    match () {
-        _ if has_avx2() => decode_checked_avx2(input, output),
-        _ if has_ssse3() => decode_checked_ssse3(input, output),
-        _ => generic::decode_checked(input, output),
+    if has_avx2() {
+        return decode_checked_avx2(input, output);
     }
+    decode_checked_fallback(input, output)
+}
+
+/// Decodes without AVX2, out of line so that the callers of [`decode_checked`] inline only the
+/// AVX2 dispatch.
+///
+/// # Safety
+///
+/// `output.len()` must equal `input.len() / 2`, and `input.len()` must be even.
+#[inline(never)]
+unsafe fn decode_checked_fallback(input: &[u8], output: &mut [MaybeUninit<u8>]) -> bool {
+    if has_ssse3() {
+        return decode_checked_ssse3(input, output);
+    }
+    generic::decode_checked(input, output)
 }
 
 /// # Safety
