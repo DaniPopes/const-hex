@@ -2,6 +2,9 @@ use core::mem::MaybeUninit;
 
 /// Internal trait for the uninitialized output buffer of the encoders and decoders.
 pub(crate) trait Output {
+    /// Appends `bytes` to the output.
+    ///
+    /// Callers must ensure `bytes.len() <= self.remaining()`.
     fn write(&mut self, bytes: &[u8]);
 
     #[inline]
