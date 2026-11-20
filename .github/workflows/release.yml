@@ -26,6 +26,9 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          set -o pipefail
+          packages=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.publish == null) | "\(.name) \(.version)"')
+          [ -n "$packages" ] || { echo "::error::no publishable crates found"; exit 1; }
           args=
           while read -r name version; do
             if [ "$version" != "${TAG#v}" ]; then
@@ -38,7 +41,7 @@ jobs:
               404) args="$args -p $name" ;;
               *) echo "::error::crates.io returned $status for $name $version"; exit 1 ;;
             esac
-          done < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.publish == null) | "\(.name) \(.version)"')
+          done <<< "$packages"
           echo "args=$args" >> "$GITHUB_OUTPUT"
 
       - name: Verify
