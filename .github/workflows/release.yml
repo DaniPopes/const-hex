@@ -1,0 +1,66 @@
+name: Release
+
+permissions: {}
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Plan
+        id: plan
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -o pipefail
+          packages=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.publish == null) | "\(.name) \(.version)"')
+          [ -n "$packages" ] || { echo "::error::no publishable crates found"; exit 1; }
+          args=
+          while read -r name version; do
+            if [ "$version" != "${TAG#v}" ]; then
+              echo "::error::$name $version does not match tag $TAG"
+              exit 1
+            fi
+            status=$(curl -s -o /dev/null -w '%{http_code}' -A "$GITHUB_REPOSITORY release workflow" "https://crates.io/api/v1/crates/$name/$version")
+            case $status in
+              200) echo "$name $version is already published" ;;
+              404) args="$args -p $name" ;;
+              *) echo "::error::crates.io returned $status for $name $version"; exit 1 ;;
+            esac
+          done <<< "$packages"
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: Verify
+        if: steps.plan.outputs.args != ''
+        env:
+          ARGS: ${{ steps.plan.outputs.args }}
+        run: |
+          read -ra args <<< "$ARGS"
+          cargo publish --dry-run "${args[@]}"
+
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        if: steps.plan.outputs.args != ''
+        id: auth
+
+      - name: Publish
+        if: steps.plan.outputs.args != ''
+        env:
+          ARGS: ${{ steps.plan.outputs.args }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          read -ra args <<< "$ARGS"
+          cargo publish --no-verify "${args[@]}"

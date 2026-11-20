@@ -1,5 +1,6 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::incompatible_msrv)]
+#![allow(clippy::large_unopt_stack_frames)]
 
 use divan::Bencher;
 use std::fmt;
